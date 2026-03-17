@@ -163,6 +163,43 @@ def train_iqn(
     return model, xm, xs, ym, ys
 
 
+def predict_iqn(
+    model: IQN,
+    X_te: np.ndarray,
+    xm: np.ndarray,
+    xs: np.ndarray,
+    ym: float,
+    ys: float,
+    taus: np.ndarray | list[float] = (0.025, 0.25, 0.5, 0.75, 0.975),
+) -> np.ndarray:
+    """Predict at user-specified quantile levels.
+
+    Unlike ``sample_iqn`` which uses evenly-spaced quantiles, this function
+    evaluates the IQN at specific quantile levels chosen by the caller —
+    useful for extracting credible intervals or comparing specific quantiles.
+
+    Parameters
+    ----------
+    model : trained IQN.
+    X_te : (n_test, d) test inputs (raw, unnormalized).
+    xm, xs : input normalization (mean, std) from train_iqn.
+    ym, ys : output normalization (mean, std) from train_iqn.
+    taus : quantile levels to evaluate.
+
+    Returns
+    -------
+    (len(taus), n_test) array of predicted values.
+    """
+    taus = np.asarray(taus)
+    Xt = torch.tensor((X_te - xm) / xs, dtype=torch.float32)
+    rows = []
+    with torch.no_grad():
+        for tau in taus:
+            f = model(Xt, float(tau))
+            rows.append(f[:, 1].numpy() * ys + ym)
+    return np.array(rows)
+
+
 def sample_iqn(
     model: IQN,
     X_te: np.ndarray,

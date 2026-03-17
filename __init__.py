@@ -21,6 +21,9 @@ gbc.conformal       Ch 14 §sec-cal-conformal, §sec-cal-per-horizon
 gbc.data            Ch 2 §sec-datasets (all dataset loaders)
 gbc.metrics         Ch 5 §sec-iqn-diagnostics (CRPS, coverage, RMSE)
 gbc.plotting        All chapters (quantile fan, calibration, PIT plots)
+gbc.sensitivity     Ch 7 (partial effects, elasticities, feature importance)
+gbc.spatial         Ch 10 (spatial lags, Moran eigenvectors, panel features)
+gbc.multivariate    Ch 4, 10 (autoregressive IQN, Cholesky preconditioning)
 gbc.utils           App. B §sec-computing (seeding, device, scheduler)
 
 Usage::
@@ -31,15 +34,28 @@ Usage::
     from gbc.metrics import crps_samples, coverage
 """
 
-from gbc.iqn import IQN, train_iqn, sample_iqn
+from gbc.iqn import IQN, train_iqn, sample_iqn, predict_iqn
 from gbc.ensemble import HetMLP
-from gbc.metrics import crps_samples, crps_gaussian, coverage, pi_width
+from gbc.metrics import crps_samples, crps_gaussian, coverage, pi_width, pit_values
 from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble
+from gbc.sensitivity import partial_effect, elasticity, feature_effects
+from gbc.spatial import (
+    spatial_lag, spatial_features, moran_eigenvectors, spatial_panel_features,
+)
+from gbc.multivariate import (
+    train_multivariate_iqn, sample_multivariate_iqn,
+    cholesky_precondition, cholesky_inverse,
+)
 
 __version__ = "0.2.0"
 __all__ = [
-    "IQN", "train_iqn", "sample_iqn",
+    "IQN", "train_iqn", "sample_iqn", "predict_iqn",
     "HetMLP",
     "CausalIQN", "CausalIQNv2", "CausalEnsemble",
-    "crps_samples", "crps_gaussian", "coverage", "pi_width",
+    "crps_samples", "crps_gaussian", "coverage", "pi_width", "pit_values",
+    "partial_effect", "elasticity", "feature_effects",
+    "spatial_lag", "spatial_features", "moran_eigenvectors",
+    "spatial_panel_features",
+    "train_multivariate_iqn", "sample_multivariate_iqn",
+    "cholesky_precondition", "cholesky_inverse",
 ]

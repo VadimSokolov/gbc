@@ -79,6 +79,25 @@ def pi_width(samples: np.ndarray, alpha: float = 0.90) -> float:
     return float(np.mean(hi - lo))
 
 
+def pit_values(y: np.ndarray, samples: np.ndarray) -> np.ndarray:
+    """Probability Integral Transform (PIT) values.
+
+    For a well-calibrated model, PIT values should be approximately
+    Uniform(0, 1). This function extracts the values; use
+    ``calibration_plot`` to visualize them as a histogram.
+
+    Parameters
+    ----------
+    y : (n,) observed values.
+    samples : (B, n) quantile samples from the predictive distribution.
+
+    Returns
+    -------
+    (n,) PIT values in [0, 1].
+    """
+    return np.mean(samples <= y[np.newaxis, :], axis=0)
+
+
 def rmse(y: np.ndarray, y_hat: np.ndarray) -> float:
     """Root mean squared error."""
     return float(np.sqrt(np.mean((y - y_hat) ** 2)))
