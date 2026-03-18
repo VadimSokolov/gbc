@@ -52,6 +52,15 @@ def crps_samples(y: np.ndarray, samples: np.ndarray) -> float:
     return float(np.mean(term1 - term2))
 
 
+def _quantile_interval(
+    samples: np.ndarray, alpha: float = 0.90
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extract lower and upper bounds of a prediction interval from samples."""
+    lo = np.quantile(samples, (1 - alpha) / 2, axis=0)
+    hi = np.quantile(samples, 1 - (1 - alpha) / 2, axis=0)
+    return lo, hi
+
+
 def coverage(y: np.ndarray, samples: np.ndarray, alpha: float = 0.90) -> float:
     """Empirical coverage of prediction intervals.
 
@@ -61,8 +70,7 @@ def coverage(y: np.ndarray, samples: np.ndarray, alpha: float = 0.90) -> float:
     samples : (B, n) quantile samples.
     alpha : nominal coverage level.
     """
-    lo = np.quantile(samples, (1 - alpha) / 2, axis=0)
-    hi = np.quantile(samples, 1 - (1 - alpha) / 2, axis=0)
+    lo, hi = _quantile_interval(samples, alpha)
     return float(np.mean((y >= lo) & (y <= hi)))
 
 
@@ -74,8 +82,7 @@ def pi_width(samples: np.ndarray, alpha: float = 0.90) -> float:
     samples : (B, n) quantile samples.
     alpha : nominal coverage level.
     """
-    lo = np.quantile(samples, (1 - alpha) / 2, axis=0)
-    hi = np.quantile(samples, 1 - (1 - alpha) / 2, axis=0)
+    lo, hi = _quantile_interval(samples, alpha)
     return float(np.mean(hi - lo))
 
 

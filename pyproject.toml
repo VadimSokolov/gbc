@@ -29,4 +29,3 @@ Repository = "https://github.com/VadimSokolov/gbc"
 
 [tool.setuptools]
 packages = ["gbc"]
-package-dir = {"gbc" = "."}   # source files are at the repo root

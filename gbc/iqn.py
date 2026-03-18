@@ -25,6 +25,26 @@ import torch.nn as nn
 from gbc.loss import composite_loss
 
 
+def cosine_embed(
+    tau: float, nh: int, device=None, dtype=torch.float32
+) -> torch.Tensor:
+    """Cosine quantile embedding (Ch 5 §sec-iqn-cosine, Definition 5.1).
+
+    Parameters
+    ----------
+    tau : scalar quantile level in (0, 1).
+    nh : number of cosine frequencies.
+    device : torch device.
+    dtype : tensor dtype.
+
+    Returns
+    -------
+    (nh,) tensor of cosine features.
+    """
+    i = torch.arange(1, nh + 1, device=device, dtype=dtype)
+    return torch.cos(i * torch.pi * tau)
+
+
 class IQN(nn.Module):
     r"""Implicit Quantile Network (Ch 5 §sec-iqn-architecture).
 
@@ -79,8 +99,7 @@ class IQN(nn.Module):
         -------
         (n, 2) tensor — column 0 is mean estimate, column 1 is quantile.
         """
-        i = torch.arange(1, self.nh + 1, dtype=torch.float32)
-        h_tau = self.fc_tau(torch.cos(i * torch.pi * tau))
+        h_tau = self.fc_tau(cosine_embed(tau, self.nh, device=x.device, dtype=x.dtype))
         h_x = self.fc_x(x)
         h = self.fc1(h_x * h_tau.unsqueeze(0))
         h = self.fc2(h)

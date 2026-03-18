@@ -43,6 +43,8 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from gbc.loss import composite_loss
+from gbc.iqn import cosine_embed, train_iqn
+from gbc.utils import get_device
 
 
 class CausalIQN(nn.Module):
@@ -99,9 +101,7 @@ class CausalIQN(nn.Module):
         -------
         (y_pred, pi_logits, te_output, mu_output)
         """
-        tau_e = self.tau_embed(
-            torch.cos(torch.arange(1, self.nh + 1) * torch.pi * tau)
-        )
+        tau_e = self.tau_embed(cosine_embed(tau, self.nh, device=x.device, dtype=x.dtype))
         pi = self.pi(x)
         pi1 = self.pi1(pi)
         mu = self.mu1(self.mu(torch.cat((x, pi), 1)))
@@ -117,19 +117,11 @@ class CausalIQN(nn.Module):
     ) -> torch.Tensor:
         """Composite loss with propensity BCE."""
         tau = torch.rand(1).item()
-        tauind = float(tau < 0.5)
-        f, pi, _, _ = self(x, z, tau)
-        piloss = nn.BCELoss()(torch.sigmoid(pi.view(-1)), z)
-        e = y.view(-1, 1) - f
-        loss = w[0] * torch.mean(torch.abs(e[:, 0]))
-        loss = loss + w[1] * abs(tau - 0.5) * (
-            tauind * torch.mean(torch.relu(-e[:, 1]))
-            + (1 - tauind) * torch.mean(torch.relu(e[:, 1]))
+        f, pi_logit, _, _ = self(x, z, tau)
+        pi_loss = nn.functional.binary_cross_entropy_with_logits(
+            pi_logit.view(-1), z.float()
         )
-        loss = loss + w[2] * torch.mean(
-            torch.maximum(tau * e[:, 1], (tau - 1) * e[:, 1])
-        )
-        return loss + piloss
+        return composite_loss(y, f, tau, w) + pi_loss
 
     def fit(
         self,
@@ -257,8 +249,7 @@ class CausalIQNv2(nn.Module):
         mu = self.mu_net(torch.cat([x, pi_embed], dim=1))
 
         # Quantile features
-        harmonics = torch.arange(1, self.nh + 1, device=x.device, dtype=x.dtype)
-        q_feat = torch.cos(harmonics * torch.pi * tau)          # (nh,)
+        q_feat = cosine_embed(tau, self.nh, device=x.device, dtype=x.dtype)
         q_feat = q_feat.unsqueeze(0).expand(x.shape[0], -1)     # (n, nh)
 
         # TE: concat [x, q_feat] → hidden → concat [hidden, x] → head
@@ -275,23 +266,13 @@ class CausalIQNv2(nn.Module):
         z: torch.Tensor,
         w: tuple[float, float, float] = (0.3, 0.1, 0.6),
     ) -> torch.Tensor:
-        """Composite loss with propensity BCE (same structure as CausalIQN)."""
+        """Composite loss with propensity BCE."""
         tau = torch.rand(1).item()
         f, pi_logit, _, _ = self(x, z, tau)
-
         pi_loss = nn.functional.binary_cross_entropy_with_logits(
             pi_logit.view(-1), z.float()
         )
-        e = y.view(-1, 1) - f
-
-        loc_loss = torch.mean(torch.abs(e[:, 0]))
-        tauind = float(tau < 0.5)
-        mono = tauind * torch.mean(torch.relu(-e[:, 1])) + (1 - tauind) * torch.mean(
-            torch.relu(e[:, 1])
-        )
-        pinball = torch.mean(torch.maximum(tau * e[:, 1], (tau - 1) * e[:, 1]))
-
-        return w[0] * loc_loss + w[1] * abs(tau - 0.5) * mono + w[2] * pinball + pi_loss
+        return composite_loss(y, f, tau, w) + pi_loss
 
 
 class CausalEnsemble:
@@ -322,7 +303,7 @@ class CausalEnsemble:
     ):
         self.n_models = n_models
         if device == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = get_device()
         else:
             self.device = torch.device(device)
 
@@ -480,9 +461,6 @@ class CausalEnsemble:
         -------
         (n, n_q) quantile treatment effects.
         """
-        from gbc.iqn import train_iqn
-        import torch
-
         if quantiles is None:
             quantiles = np.linspace(0.05, 0.95, 19)
 

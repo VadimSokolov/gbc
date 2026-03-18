@@ -12,7 +12,8 @@ Book references
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
+
+from gbc.metrics import pit_values
 
 
 def set_theme():
@@ -99,8 +100,7 @@ def calibration_plot(
     if ax is None:
         _, ax = plt.subplots()
 
-    # PIT values: fraction of samples <= observed
-    pit = np.mean(samples <= y[np.newaxis, :], axis=0)
+    pit = pit_values(y, samples)
     ax.hist(pit, bins=n_bins, density=True, alpha=0.7, color="steelblue",
             edgecolor="white")
     ax.axhline(1.0, color="k", ls="--", lw=1, label="Ideal (Uniform)")
