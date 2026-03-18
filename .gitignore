@@ -7,4 +7,4 @@ build/
 *.so
 seq/
 .DS_Store
-.CLAUDE.md
+CLAUDE.md
