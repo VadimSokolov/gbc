@@ -453,6 +453,57 @@ class CausalEnsemble:
         qte /= self.n_models
         return qte
 
+    def estimate_qte_separate(
+        self, X: np.ndarray, Y: np.ndarray, Z: np.ndarray,
+        quantiles: np.ndarray | None = None,
+        epochs: int = 3000, hdim: int = 128, nh: int = 32,
+    ) -> np.ndarray:
+        """Estimate QTE by fitting separate IQN models for treated and control.
+
+        This avoids the constant-QTE problem that arises when a single
+        causal model factorizes the outcome as mu(x) + te(x,q)*z,
+        because each group gets its own quantile function.
+
+        QTE(q, x) = Q_{Y|X,Z=1}(q | x) - Q_{Y|X,Z=0}(q | x)
+
+        Parameters
+        ----------
+        X : (n, d) covariates.
+        Y : (n,) outcomes.
+        Z : (n,) treatment (0/1).
+        quantiles : (n_q,) quantile levels.
+        epochs : training epochs for each IQN.
+        hdim : hidden dimension for IQN.
+        nh : cosine embedding dimension.
+
+        Returns
+        -------
+        (n, n_q) quantile treatment effects.
+        """
+        from gbc.iqn import train_iqn
+        import torch
+
+        if quantiles is None:
+            quantiles = np.linspace(0.05, 0.95, 19)
+
+        X1, Y1 = X[Z == 1], Y[Z == 1]
+        X0, Y0 = X[Z == 0], Y[Z == 0]
+
+        m1, xm1, xs1, ym1, ys1 = train_iqn(X1, Y1, epochs=epochs, hdim=hdim, nh=nh, seed=42)
+        m0, xm0, xs0, ym0, ys0 = train_iqn(X0, Y0, epochs=epochs, hdim=hdim, nh=nh, seed=43)
+
+        X1t = torch.tensor((X - xm1) / xs1, dtype=torch.float32)
+        X0t = torch.tensor((X - xm0) / xs0, dtype=torch.float32)
+
+        qte = np.zeros((X.shape[0], len(quantiles)))
+        with torch.no_grad():
+            for j, q in enumerate(quantiles):
+                f1 = m1(X1t, q)[:, 1].numpy() * ys1 + ym1
+                f0 = m0(X0t, q)[:, 1].numpy() * ys0 + ym0
+                qte[:, j] = f1 - f0
+
+        return qte
+
     def predict_propensity(self, X: np.ndarray) -> np.ndarray:
         """Predict P(Z=1 | X) averaged over ensemble.
 
