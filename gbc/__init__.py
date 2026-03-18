@@ -36,7 +36,7 @@ Usage::
 
 from gbc.iqn import IQN, train_iqn, sample_iqn, predict_iqn
 from gbc.ensemble import HetMLP
-from gbc.metrics import crps_samples, crps_gaussian, coverage, pi_width, pit_values
+from gbc.metrics import crps_samples, crps_gaussian, coverage, pi_width, pit_values, energy_score
 from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble
 from gbc.sensitivity import partial_effect, elasticity, feature_effects
 from gbc.spatial import (
@@ -44,6 +44,7 @@ from gbc.spatial import (
 )
 from gbc.multivariate import (
     train_multivariate_iqn, sample_multivariate_iqn,
+    predict_multivariate_iqn, order_by_variance,
     cholesky_precondition, cholesky_inverse,
 )
 
@@ -53,9 +54,11 @@ __all__ = [
     "HetMLP",
     "CausalIQN", "CausalIQNv2", "CausalEnsemble",
     "crps_samples", "crps_gaussian", "coverage", "pi_width", "pit_values",
+    "energy_score",
     "partial_effect", "elasticity", "feature_effects",
     "spatial_lag", "spatial_features", "moran_eigenvectors",
     "spatial_panel_features",
     "train_multivariate_iqn", "sample_multivariate_iqn",
+    "predict_multivariate_iqn", "order_by_variance",
     "cholesky_precondition", "cholesky_inverse",
 ]

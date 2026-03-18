@@ -135,6 +135,64 @@ def individual_welfare(
     ])
 
 
+def portfolio_meu(
+    samples: np.ndarray,
+    utility: Callable[[np.ndarray], np.ndarray] | None = None,
+    n_restarts: int = 5,
+    seed: int = 42,
+) -> dict[str, np.ndarray | float]:
+    r"""Optimal portfolio weights via Monte Carlo expected utility.
+
+    Solves the Bayesian portfolio allocation problem (Section 7.2 of
+    Lopes, Polson & Sokolov, 2026):
+
+    .. math::
+        \max_{w \in \Delta^{d-1}} \frac{1}{M}\sum_{j=1}^M U(w^\top r^{(j)})
+
+    where :math:`r^{(j)}` are multivariate return draws from the
+    MGBC posterior and :math:`\Delta^{d-1}` is the simplex.
+
+    Parameters
+    ----------
+    samples : (B, d) multivariate return draws.
+    utility : callable mapping portfolio returns (B,) -> (B,).
+        Default: log utility (Kelly criterion).
+    n_restarts : number of random initializations for the optimizer.
+    seed : random seed.
+
+    Returns
+    -------
+    Dict with ``weights``, ``expected_utility``, ``portfolio_returns``.
+    """
+    from scipy.optimize import minimize
+
+    B, d = samples.shape
+    if utility is None:
+        utility = np.log
+    rng = np.random.default_rng(seed)
+
+    def neg_eu(w):
+        return -np.mean(utility(samples @ w))
+
+    constraints = {"type": "eq", "fun": lambda w: np.sum(w) - 1.0}
+    bounds = [(0.0, 1.0)] * d
+
+    best = None
+    for _ in range(n_restarts):
+        w0 = rng.dirichlet(np.ones(d))
+        res = minimize(neg_eu, w0, method="SLSQP",
+                       bounds=bounds, constraints=constraints)
+        if best is None or res.fun < best.fun:
+            best = res
+
+    w_opt = best.x
+    return {
+        "weights": w_opt,
+        "expected_utility": -best.fun,
+        "portfolio_returns": samples @ w_opt,
+    }
+
+
 # ── Standard distortion functions ──────────────────────────────
 
 

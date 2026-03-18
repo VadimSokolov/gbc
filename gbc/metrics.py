@@ -105,6 +105,32 @@ def pit_values(y: np.ndarray, samples: np.ndarray) -> np.ndarray:
     return np.mean(samples <= y[np.newaxis, :], axis=0)
 
 
+def energy_score(y: np.ndarray, samples: np.ndarray) -> float:
+    r"""Energy Score — multivariate proper scoring rule (Gneiting & Raftery, 2007).
+
+    Multivariate generalization of CRPS:
+
+    .. math::
+        \text{ES}(F, y) = E_F\|\theta - y\| - \frac{1}{2}E_F\|\theta - \theta'\|
+
+    Uses an O(B) randomised estimator via random permutation.
+
+    Parameters
+    ----------
+    y : (n, d) observed multivariate values.
+    samples : (B, n, d) draws from the predictive distribution.
+
+    Returns
+    -------
+    Scalar mean energy score across observations.
+    """
+    B = samples.shape[0]
+    term1 = np.mean(np.linalg.norm(samples - y[np.newaxis, :, :], axis=2), axis=0)
+    idx = np.random.permutation(B)
+    term2 = 0.5 * np.mean(np.linalg.norm(samples - samples[idx], axis=2), axis=0)
+    return float(np.mean(term1 - term2))
+
+
 def rmse(y: np.ndarray, y_hat: np.ndarray) -> float:
     """Root mean squared error."""
     return float(np.sqrt(np.mean((y - y_hat) ** 2)))

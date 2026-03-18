@@ -1,15 +1,13 @@
-"""Multivariate IQN via autoregressive Cholesky decomposition.
+"""Multivariate GBC via autoregressive Cholesky decomposition (MGBC).
 
-For a *d*-dimensional target θ = (θ₁, …, θ_d), the noise outsourcing
-theorem (Ch 4 §sec-noise-multi, Theorem 4.2) gives the decomposition
+Implements the MGBC master formula (Lopes, Polson & Sokolov, 2026):
 
-    θ₁ = G₁(τ₁, x)
-    θ₂ = G₂(τ₂, x, θ₁)
-    …
-    θ_d = G_d(τ_d, x, θ₁, …, θ_{d-1})
+    θ_k = Q_k(τ_k | θ₁, …, θ_{k-1}, y),  τ_k ~ U[0,1],  k = 1, …, d
 
-where τ₁, …, τ_d are independent Uniform(0,1).  Each G_j is the
-conditional quantile function of θ_j given (x, θ₁, …, θ_{j-1}).
+The joint posterior is factored into d conditional univariate quantile
+regressions (Rosenblatt transform), each estimated by an IQN.  This is
+simultaneously a Cholesky factorization, a sequential decision problem,
+and a directed graphical model.
 
 The **Cholesky trick** exploits the fact that if the joint distribution
 is approximately Gaussian, the conditional means are linear in the
@@ -23,6 +21,7 @@ Book references
 - Ch 4 §sec-noise-multi   : multivariate noise outsourcing (Theorem 4.2)
 - Ch 10 §sec-bayes-multi  : autoregressive posterior sampling
 - App. A §sec-proofs-multi : convergence guarantee for sequential decomposition
+- Lopes, Polson & Sokolov (2026) : MGBC master formula, ordering, energy score
 """
 
 import numpy as np
@@ -127,6 +126,73 @@ def sample_multivariate_iqn(
             theta_so_far = np.column_stack([theta_so_far, theta_j])
 
     return samples
+
+
+def predict_multivariate_iqn(
+    chain: list[tuple],
+    X_te: np.ndarray,
+    taus: np.ndarray | list[float] = (0.025, 0.25, 0.5, 0.75, 0.975),
+) -> np.ndarray:
+    """Predict quantiles at specific levels through the autoregressive chain.
+
+    For each component k, predecessors θ₁, …, θ_{k-1} are fixed at their
+    median predictions (τ=0.5), then the quantile function Q_k is evaluated
+    at each requested τ level.
+
+    Parameters
+    ----------
+    chain : list of (model, xm, xs, ym, ys) from ``train_multivariate_iqn``.
+    X_te : (n_test, p) test features (raw, unnormalized).
+    taus : quantile levels to evaluate.
+
+    Returns
+    -------
+    (n_test, d, n_q) array of quantile predictions.
+    """
+    taus = np.asarray(taus)
+    d = len(chain)
+    n = X_te.shape[0]
+    result = np.empty((n, d, len(taus)))
+
+    theta_median = np.empty((n, 0))
+    for j in range(d):
+        model_j, xm_j, xs_j, ym_j, ys_j = chain[j]
+        if j == 0:
+            X_j = X_te
+        else:
+            X_j = np.column_stack([X_te, theta_median])
+
+        Xt = torch.tensor((X_j - xm_j) / xs_j, dtype=torch.float32)
+        with torch.no_grad():
+            for q_idx, tau in enumerate(taus):
+                f = model_j(Xt, float(tau))
+                result[:, j, q_idx] = f[:, 1].numpy() * ys_j + ym_j
+            # Median for conditioning on subsequent components
+            f_med = model_j(Xt, 0.5)
+            median_j = f_med[:, 1].numpy() * ys_j + ym_j
+
+        theta_median = np.column_stack([theta_median, median_j])
+
+    return result
+
+
+def order_by_variance(Y: np.ndarray) -> np.ndarray:
+    """Order components by decreasing marginal variance.
+
+    Variables with larger marginal variance are placed first in the
+    Cholesky ordering, as they tend to be more influential and benefit
+    from being conditioned on early (Section 5.2 of Lopes, Polson &
+    Sokolov, 2026).
+
+    Parameters
+    ----------
+    Y : (n, d) multivariate targets.
+
+    Returns
+    -------
+    (d,) array of component indices, sorted by decreasing variance.
+    """
+    return np.argsort(-np.var(Y, axis=0))
 
 
 def cholesky_precondition(
