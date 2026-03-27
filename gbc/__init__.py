@@ -24,6 +24,9 @@ gbc.plotting        All chapters (quantile fan, calibration, PIT plots)
 gbc.sensitivity     Ch 7 (partial effects, elasticities, feature importance)
 gbc.spatial         Ch 10 (spatial lags, Moran eigenvectors, panel features)
 gbc.multivariate    Ch 4, 10 (autoregressive IQN, Cholesky preconditioning)
+gbc.survivor        Survivor function estimation and tail functionals from IQN
+gbc.evt             Extreme Value Theory distributions and simulation for GBC
+gbc.shrinkage       Horseshoe and hierarchical shrinkage priors
 gbc.utils           App. B §sec-computing (seeding, device, scheduler)
 
 Usage::
@@ -32,6 +35,9 @@ Usage::
     from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble
     from gbc.welfare import meu, yaari_weighted, distortion_cvar
     from gbc.metrics import crps_samples, coverage
+    from gbc.survivor import survivor_curve, return_level, expected_shortfall
+    from gbc.evt import gev_quantile, simulate_gev_training_data
+    from gbc.shrinkage import horseshoe_posterior, horseshoe_batch
 """
 
 from gbc.iqn import IQN, train_iqn, sample_iqn, predict_iqn
@@ -47,8 +53,24 @@ from gbc.multivariate import (
     predict_multivariate_iqn, order_by_variance,
     cholesky_precondition, cholesky_inverse,
 )
+from gbc.survivor import (
+    survivor_curve, posterior_mean, return_level,
+    exceedance_prob, expected_shortfall, tail_weight_crps,
+    meu_optimal_action,
+)
+from gbc.evt import (
+    gev_quantile, gev_cdf, gev_survivor, gev_density, gev_return_level,
+    gpd_quantile, gpd_survivor, gpd_density,
+    poisson_loglik,
+    simulate_gev_training_data, simulate_gpd_training_data,
+    simulate_nonstationary_gev_training_data,
+)
+from gbc.shrinkage import (
+    horseshoe_draw, horseshoe_batch, shrinkage_factor,
+    horseshoe_posterior, simulate_hierarchical_training_data,
+)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "IQN", "train_iqn", "sample_iqn", "predict_iqn",
     "HetMLP",
@@ -61,4 +83,18 @@ __all__ = [
     "train_multivariate_iqn", "sample_multivariate_iqn",
     "predict_multivariate_iqn", "order_by_variance",
     "cholesky_precondition", "cholesky_inverse",
+    # survivor module
+    "survivor_curve", "posterior_mean", "return_level",
+    "exceedance_prob", "expected_shortfall", "tail_weight_crps",
+    "meu_optimal_action",
+    # evt module
+    "gev_quantile", "gev_cdf", "gev_survivor", "gev_density",
+    "gev_return_level",
+    "gpd_quantile", "gpd_survivor", "gpd_density",
+    "poisson_loglik",
+    "simulate_gev_training_data", "simulate_gpd_training_data",
+    "simulate_nonstationary_gev_training_data",
+    # shrinkage module
+    "horseshoe_draw", "horseshoe_batch", "shrinkage_factor",
+    "horseshoe_posterior", "simulate_hierarchical_training_data",
 ]
