@@ -1,12 +1,5 @@
 # gbc — Generative Bayesian Computation
 
-Python companion package for the textbook:
-
-> **Generative Bayesian Computation: Quantile Neural Networks for Inference and Surrogates**
-> Nicholas Polson (University of Chicago) & Vadim Sokolov (George Mason University), 2026.
-
-## What This Is
-
 GBC replaces MCMC with a neural network trained by SGD. The core idea:
 simulate `(θ, y)` pairs from the prior and likelihood, train an
 **Implicit Quantile Network (IQN)** on the pinball loss, and obtain
