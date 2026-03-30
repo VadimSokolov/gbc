@@ -6,9 +6,6 @@ simulate `(θ, y)` pairs from the prior and likelihood, train an
 posterior quantiles for any observed dataset via a single forward pass —
 no chains, no burn-in, no likelihood evaluation.
 
-This package implements all methods developed in the book, with each
-module cross-referenced to its corresponding chapter and section.
-
 ## Installation
 
 ```bash
