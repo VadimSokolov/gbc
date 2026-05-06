@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+spatial = ["torch-geometric>=2.4"]
 
 [project.urls]
 Repository = "https://github.com/VadimSokolov/gbc"
