@@ -139,6 +139,9 @@ def train_iqn(
     wd: float = 1e-4,
     seed: int = 42,
     w: tuple[float, float, float] = (0.3, 0.3, 0.4),
+    batch_size: int | None = None,
+    verbose: bool = False,
+    device: str | torch.device | None = None,
 ) -> tuple:
     """Train an IQN with Adam + cosine annealing.
 
@@ -153,32 +156,59 @@ def train_iqn(
     wd : weight decay.
     seed : random seed.
     w : composite loss weights (L1, monotonicity, pinball).
+    batch_size : mini-batch size. ``None`` uses full batch.
+    verbose : if True, print loss every 500 epochs.
+    device : torch device (``None`` selects automatically).
 
     Returns
     -------
     (model, xm, xs, ym, ys) — trained model and normalization stats.
     """
     torch.manual_seed(seed)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
+
     xdim = X.shape[1]
+    n = X.shape[0]
     xm, xs = X.mean(0), X.std(0) + 1e-8
     ym, ys = float(y.mean()), float(y.std()) + 1e-8
-    Xt = torch.tensor((X - xm) / xs, dtype=torch.float32)
-    yt = torch.tensor((y - ym) / ys, dtype=torch.float32)
+    Xt = torch.tensor((X - xm) / xs, dtype=torch.float32, device=device)
+    yt = torch.tensor((y - ym) / ys, dtype=torch.float32, device=device)
 
-    model = IQN(xdim, hdim=hdim, nh=nh)
+    model = IQN(xdim, hdim=hdim, nh=nh).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=epochs, eta_min=lr * 0.01
     )
+    use_batches = batch_size is not None and batch_size < n
     model.train()
-    for _ in range(epochs):
-        opt.zero_grad()
-        loss = model.loss_fn(Xt, yt, w)
-        loss.backward()
-        opt.step()
+    for ep in range(epochs):
+        if use_batches:
+            perm = torch.randperm(n, device=device)
+            epoch_loss = 0.0
+            n_batches = 0
+            for start in range(0, n, batch_size):
+                idx = perm[start : start + batch_size]
+                opt.zero_grad()
+                loss = model.loss_fn(Xt[idx], yt[idx], w)
+                loss.backward()
+                opt.step()
+                epoch_loss += loss.item()
+                n_batches += 1
+        else:
+            opt.zero_grad()
+            loss = model.loss_fn(Xt, yt, w)
+            loss.backward()
+            opt.step()
+            epoch_loss = loss.item()
+            n_batches = 1
         sched.step()
+        if verbose and (ep + 1) % 500 == 0:
+            print(f"  epoch {ep+1}/{epochs}  loss={epoch_loss/n_batches:.4f}")
 
-    model.eval()
+    model.eval().cpu()
     return model, xm, xs, ym, ys
 
 

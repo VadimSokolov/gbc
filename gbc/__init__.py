@@ -24,6 +24,10 @@ gbc.plotting        All chapters (quantile fan, calibration, PIT plots)
 gbc.sensitivity     Ch 7 (partial effects, elasticities, feature importance)
 gbc.spatial         Ch 10 (spatial lags, Moran eigenvectors, panel features)
 gbc.multivariate    Ch 4, 10 (autoregressive IQN, Cholesky preconditioning)
+gbc.portfolio       Portfolio dynamics: Kelly, (s,S) corridor, SPT, universal,
+                    Bayesian selection (Polson & Sokolov 2026)
+gbc.abc             ABC-MCMC sampler (Marjoram et al. 2003)
+gbc.ssm             Ch 11 §sec-ssm (particle filters, GBC smoothers)
 gbc.utils           App. B §sec-computing (seeding, device, scheduler)
 
 Usage::
@@ -42,11 +46,32 @@ from gbc.sensitivity import partial_effect, elasticity, feature_effects
 from gbc.spatial import (
     spatial_lag, spatial_features, moran_eigenvectors, spatial_panel_features,
 )
+try:
+    from gbc.spatial_gnn import (
+        GBCSpatial, SpatialEncoder, SpatialIQN,
+        build_spatial_graph, build_batch, posterior_samples as spatial_posterior_samples,
+        huber_quantile_loss, train_step as spatial_train_step,
+    )
+except ImportError:
+    pass  # torch_geometric not installed
 from gbc.multivariate import (
     train_multivariate_iqn, sample_multivariate_iqn,
     predict_multivariate_iqn, order_by_variance,
     cholesky_precondition, cholesky_inverse,
 )
+from gbc.portfolio import (
+    kelly_fraction, sS_corridor, bayesian_sS_corridor,
+    excess_growth_rate, diversity_weights, universal_portfolio,
+    bayesian_predictive_weights,
+    garman_klass_vol, rogers_satchell_vol,
+    simulate_gbm, simulate_sS_policy,
+)
+from gbc.ssm import (
+    ParticleFilter, LTGBCFilter, AugmentedGBCFilter, BackwardSmoother,
+    compute_ess, weighted_quantiles, multinomial_resample,
+    linear_gaussian_ssm, stochastic_volatility, student_t_ssm,
+)
+from gbc.abc import abc_mcmc, ABCResult, summary_rates_by_decile
 
 __version__ = "0.2.0"
 __all__ = [
@@ -61,4 +86,13 @@ __all__ = [
     "train_multivariate_iqn", "sample_multivariate_iqn",
     "predict_multivariate_iqn", "order_by_variance",
     "cholesky_precondition", "cholesky_inverse",
+    "ParticleFilter", "LTGBCFilter", "AugmentedGBCFilter", "BackwardSmoother",
+    "compute_ess", "weighted_quantiles", "multinomial_resample",
+    "linear_gaussian_ssm", "stochastic_volatility", "student_t_ssm",
+    "abc_mcmc", "ABCResult", "summary_rates_by_decile",
+    "kelly_fraction", "sS_corridor", "bayesian_sS_corridor",
+    "excess_growth_rate", "diversity_weights", "universal_portfolio",
+    "bayesian_predictive_weights",
+    "garman_klass_vol", "rogers_satchell_vol",
+    "simulate_gbm", "simulate_sS_policy",
 ]

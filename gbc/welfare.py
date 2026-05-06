@@ -248,3 +248,120 @@ def distortion_wang(lam: float) -> Callable[[float], float]:
         z = np.clip(z, 1e-10, 1 - 1e-10)
         return float(norm.cdf(norm.ppf(z) + lam))
     return h
+
+
+def distortion_prelec(alpha: float) -> Callable[[float], float]:
+    r"""Prelec (1998) probability weighting function.
+
+    The unique distortion satisfying compound invariance:
+
+    .. math::
+        g(p) = \exp\!\bigl(-(-\ln p)^{\alpha}\bigr)
+
+    - α = 1 → identity (risk neutral).
+    - α < 1 → inverted-S shape: overweights small probabilities,
+      underweights large ones.  Empirical estimate: α ≈ 0.65.
+    - α > 1 → S-shape (rare).
+
+    Parameters
+    ----------
+    alpha : curvature in (0, ∞). Typical range [0.3, 1.0].
+
+    References
+    ----------
+    Prelec, D. (1998). The probability weighting function.
+    *Econometrica*, 66(3), 497–527.
+    """
+    def g(p: float) -> float:
+        p = np.clip(p, 1e-15, 1 - 1e-15)
+        return float(np.exp(-((-np.log(p)) ** alpha)))
+    return g
+
+
+def distortion_tk(gamma: float) -> Callable[[float], float]:
+    r"""Tversky–Kahneman (1992) probability weighting function.
+
+    .. math::
+        g(p) = \frac{p^\gamma}{[p^\gamma + (1-p)^\gamma]^{1/\gamma}}
+
+    - γ = 1 → identity.
+    - γ < 1 → inverted-S shape. Empirical estimate: γ ≈ 0.69.
+
+    Parameters
+    ----------
+    gamma : curvature in (0, ∞). Typical range [0.5, 1.0].
+
+    References
+    ----------
+    Tversky, A. & Kahneman, D. (1992). Advances in prospect theory.
+    *Journal of Risk and Uncertainty*, 5(4), 297–323.
+    """
+    def g(p: float) -> float:
+        p = np.clip(p, 1e-15, 1 - 1e-15)
+        pg = p ** gamma
+        return float(pg / (pg + (1 - p) ** gamma) ** (1.0 / gamma))
+    return g
+
+
+# ── Choquet integral utilities ─────────────────────────────────
+
+
+def choquet_integral(
+    quantile_values: np.ndarray,
+    quantile_levels: np.ndarray,
+    distortion: Callable[[float], float],
+) -> float:
+    r"""Choquet integral of a quantile function w.r.t. a distorted measure.
+
+    Computes Yaari's dual functional:
+
+    .. math::
+        V(F) = \int_0^1 Q(\tau)\, g'(1-\tau)\, d\tau
+
+    where *g* is the distortion and *Q* is the quantile function.
+    Equivalent to ``yaari_weighted`` but applies the distortion to
+    :math:`1 - \tau` (the survival probability convention used in
+    insurance and dual-theory applications).
+
+    Parameters
+    ----------
+    quantile_values : (n_q,) quantile function Q(τ), sorted by τ.
+    quantile_levels : (n_q,) quantile levels τ ∈ (0, 1), ascending.
+    distortion : callable g: [0,1] → [0,1], non-decreasing, g(0)=0, g(1)=1.
+
+    Returns
+    -------
+    Scalar Choquet integral value.
+
+    Notes
+    -----
+    For risk-averse agents (convex *g*), the Choquet integral satisfies
+    V(F) ≤ E[X] with equality iff F is degenerate (Yaari, 1987,
+    Theorem 1).
+    """
+    survival = 1.0 - quantile_levels
+    g_vals = np.array([distortion(s) for s in survival])
+    g_prime = -np.gradient(g_vals, quantile_levels)  # dg(1-τ)/dτ
+    return float(np.trapezoid(quantile_values * g_prime, quantile_levels))
+
+
+def loading_factor(
+    p: float,
+    distortion: Callable[[float], float],
+) -> float:
+    r"""Ratio g(p)/p measuring the distortion-induced markup.
+
+    For insurance pricing: the agent behaves as if the loss probability
+    is g(p) rather than p, paying a loading factor of g(p)/p times the
+    actuarially fair premium.
+
+    Parameters
+    ----------
+    p : objective probability in (0, 1).
+    distortion : probability weighting function g.
+
+    Returns
+    -------
+    Scalar g(p) / p.
+    """
+    return distortion(p) / p
