@@ -109,3 +109,60 @@ def calibration_plot(
     ax.set_title(title)
     ax.legend()
     return ax
+
+
+def screening_histogram(
+    T_indist: np.ndarray,
+    T_ood: np.ndarray,
+    tau: float | None = None,
+    auc: float | None = None,
+    ax: plt.Axes | None = None,
+    label_indist: str = "In-distribution",
+    label_ood: str = "OOD",
+    title: str = "",
+) -> plt.Axes:
+    """Histogram of Tweedie test statistic for in-distribution vs OOD data.
+
+    Visualises the separation of ||T(x_t)|| between structured (in-distribution)
+    and unstructured (OOD) inputs, as produced by a score-based OOD detector.
+
+    Parameters
+    ----------
+    T_indist : (n,) test statistic values for in-distribution points.
+    T_ood : (n,) test statistic values for OOD points.
+    tau : float or None
+        Decision threshold (e.g. fdr-optimal); drawn as a dashed vertical line.
+    auc : float or None
+        AUC displayed in the title when provided.
+    ax : matplotlib axes (created if None).
+    label_indist, label_ood : str
+        Legend labels.
+    title : str
+        Axes title (overrides the auto AUC title when non-empty).
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4, 2.6))
+
+    hi = max(T_indist.max(), T_ood.max()) * 1.05
+    bins = np.linspace(0.0, hi, 40)
+    ax.hist(T_indist, bins=bins, density=True, alpha=0.65,
+            color="#2171b5", label=label_indist)
+    ax.hist(T_ood,    bins=bins, density=True, alpha=0.65,
+            color="#d94801", label=label_ood)
+    if tau is not None:
+        ax.axvline(tau, color="black", linestyle="--", linewidth=1.2,
+                   label=r"fdr threshold")
+    ax.set_xlabel(r"$\|T(x_t)\|$")
+    ax.set_ylabel("Density")
+    if title:
+        ax.set_title(title)
+    elif auc is not None:
+        ax.set_title(f"AUC = {auc:.2f}")
+    ax.legend(fontsize=8, framealpha=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    return ax
