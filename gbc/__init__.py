@@ -26,6 +26,7 @@ gbc.spatial         Ch 10 (spatial lags, Moran eigenvectors, panel features)
 gbc.multivariate    Ch 4, 10 (autoregressive IQN, Cholesky preconditioning)
 gbc.survivor        Survivor function estimation and tail functionals from IQN
 gbc.evt             Extreme Value Theory distributions and simulation for GBC
+gbc.evt_inference   Classical EVT baselines (GEV MLE/MCMC, Hill) and GBC-QNN estimators
 gbc.shrinkage       Horseshoe and hierarchical shrinkage priors
 gbc.utils           App. B §sec-computing (seeding, device, scheduler)
 
@@ -69,8 +70,14 @@ from gbc.shrinkage import (
     horseshoe_draw, horseshoe_batch, shrinkage_factor,
     horseshoe_posterior, simulate_hierarchical_training_data,
 )
+from gbc.evt_inference import (
+    fit_stationary_gev, fit_ns_gev, ns_params_at, hill, gev_mcmc,
+    return_level_ci_delta, gev_nll,
+    gbc_priors_from_data, train_predictive_iqn, train_functional_iqn,
+    gbc_return_level_posterior, gbc_predictive_samples, gbc_crps_coverage_loyo,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "IQN", "train_iqn", "sample_iqn", "predict_iqn",
     "HetMLP",
@@ -97,4 +104,9 @@ __all__ = [
     # shrinkage module
     "horseshoe_draw", "horseshoe_batch", "shrinkage_factor",
     "horseshoe_posterior", "simulate_hierarchical_training_data",
+    # evt_inference module
+    "fit_stationary_gev", "fit_ns_gev", "ns_params_at", "hill", "gev_mcmc",
+    "return_level_ci_delta", "gev_nll",
+    "gbc_priors_from_data", "train_predictive_iqn", "train_functional_iqn",
+    "gbc_return_level_posterior", "gbc_predictive_samples", "gbc_crps_coverage_loyo",
 ]
