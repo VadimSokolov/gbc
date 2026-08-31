@@ -198,13 +198,23 @@ def main():
                  (r_mcmc, "scale:r_mcmc"), (width_gbc, "scale:gbc_ci_width")]:
         ledger(v, k)
 
-    # data for figures: map (lat, lon, z100) + timing. lat/lon from the inventory
-    # cache (robust to conus_meta.csv not being written yet by a concurrent fetch).
+    # data for figures: map (lat, lon, z100) + timing.  Coordinates come from the
+    # small per-station metadata file when it is present, so the study runs
+    # without the 36 MB GHCN inventory; the inventory is the fallback for a
+    # freshly fetched station set that the metadata file does not yet cover.
+    meta = os.path.join(ROOT, "data", "conus_tmax_meta.csv")
     inv = os.path.join(ROOT, "data", "cache", "ghcnd-inventory.txt")
-    loc = {}
-    for line in open(inv):
-        if line[31:35].strip() == "TMAX":
-            loc[line[0:11]] = (float(line[12:20]), float(line[21:30]))
+    if os.path.exists(meta):
+        m = pd.read_csv(meta)
+        loc = {r.station: (r.lat, r.lon) for r in m.itertuples()}
+    elif os.path.exists(inv):
+        loc = {}
+        for line in open(inv):
+            if line[31:35].strip() == "TMAX":
+                loc[line[0:11]] = (float(line[12:20]), float(line[21:30]))
+    else:
+        raise FileNotFoundError(
+            f"need station coordinates: expected {meta} or {inv}")
     rows = [(c, loc[c][0], loc[c][1], gbc[c]["zN"]) for c in series if c in loc]
     pd.DataFrame(rows, columns=["station", "lat", "lon", "z100"]).to_csv(
         os.path.join(ROOT, "results", "scale_map.csv"), index=False)

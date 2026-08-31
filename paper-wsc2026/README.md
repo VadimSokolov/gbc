@@ -52,6 +52,7 @@ re-contacting NOAA:
 | `conus_tmax_maxima.csv` | JJA annual TMAX maxima, 112 CONUS stations with ≥ 50 years |
 | `conus_prcp_maxima.csv` | annual daily-precipitation maxima, 110 CONUS stations |
 | `conus_prcp_meta.csv` | station metadata for the precipitation set |
+| `conus_tmax_meta.csv` | latitude and longitude for the 112 temperature stations |
 | `hadcrut5_annual.csv` | HadCRUT5 global mean temperature anomaly, 1850–2025 |
 
 The `experiments/fetch_*.py` scripts rebuild these from the GHCN-Daily access
@@ -65,8 +66,13 @@ scripts target the Intel `hop` nodes of the GMU Hopper cluster:
 
 ```bash
 sbatch experiments/timing.slurm      # wall-clock + MCMC diagnostics, 1 thread, exclusive node
+sbatch experiments/scale.slurm       # Table 4 and Figure 1; reads results/timing.json
 sbatch experiments/epochsel.slurm    # training-budget sweep, 16 threads
 ```
+
+Run `timing.slurm` before `scale.slurm`: `run_scale.py` publishes the recorded
+benchmark timings when `results/timing.json` is present and warns loudly when it
+is not, so a laptop rebuild cannot quietly substitute a laptop's wall-clock.
 
 `timing.slurm` requests an exclusive node and pins every library to one thread.
 Both arms of the amortized-versus-MCMC comparison are then timed in one process
