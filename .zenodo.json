@@ -1,0 +1,23 @@
+{
+  "title": "gbc: Generative Bayesian Computation",
+  "description": "<p>Python package for Generative Bayesian Computation (GBC): Bayesian inference by training an Implicit Quantile Network on prior-predictive simulations, so posterior quantiles for an observed dataset come from a single forward pass rather than from a Markov chain.</p><p>Includes the extreme-value modules (GEV and generalized Pareto quantiles and return levels, maximum likelihood, non-stationary GEV, Hill, random-walk Metropolis, horseshoe spatial pooling, survivor-integral tail functionals) and MCMC convergence diagnostics, together with <code>paper-wsc2026/</code>, the complete reproduction bundle for Polson and Sokolov, <em>Generative Bayesian Computation for Extreme Value Theory with Climate Applications</em>, Winter Simulation Conference 2026: one driver per table, the derived station series, and the cluster scripts for the wall-clock benchmark and the training-budget sweep.</p>",
+  "upload_type": "software",
+  "license": "MIT",
+  "access_right": "open",
+  "creators": [
+    {"name": "Polson, Nicholas G.", "affiliation": "Booth School of Business, University of Chicago"},
+    {"name": "Sokolov, Vadim", "affiliation": "George Mason University"}
+  ],
+  "keywords": [
+    "generative Bayesian computation",
+    "simulation-based inference",
+    "quantile neural network",
+    "amortized inference",
+    "extreme value theory",
+    "climate extremes"
+  ],
+  "related_identifiers": [
+    {"identifier": "https://github.com/VadimSokolov/gbc",
+     "relation": "isSupplementTo", "scheme": "url"}
+  ]
+}

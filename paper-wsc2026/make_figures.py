@@ -250,9 +250,9 @@ def fig_scale_panels(L):
     nstar, n0 = L["scale:crossover"], L["scale:n_stations"]
 
     # WSC checklist item 13: minimum final print font is 9pt for Times/serif.
-    # The PDF is drawn 5.85in wide and included at 0.90\textwidth (= 5.85in of a
-    # 6.5in text block), so the scale factor is exactly 1 and every label prints
-    # at the 9pt it is drawn at. Do not include this figure at any other width.
+    # The PDF is drawn 5.85in wide and must be \includegraphics'd with NO width
+    # option, so the scale factor is exactly 1 and every label prints at the 9pt
+    # it is drawn at. A width option rescales the text below the 9pt minimum.
     with plt.rc_context({"font.size": 9, "axes.labelsize": 9, "axes.titlesize": 9,
                          "xtick.labelsize": 9, "ytick.labelsize": 9,
                          "legend.fontsize": 9}):

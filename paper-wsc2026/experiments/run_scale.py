@@ -9,6 +9,7 @@ network amortises across climates). We report, over all stations:
     aggregated over thousands of held-out station-years;
   - agreement of the amortised GBC z_100 with per-station MLE / MCMC.
 """
+import json
 import os
 import sys
 import time
@@ -85,6 +86,28 @@ def gbc_predict_samples(trained, x, B=500):
                               xm, xs, ym, ys, B=B).ravel()
 
 
+def authoritative_timing():
+    """Timings from ``run_timing.py`` if it has been run, else None.
+
+    Wall-clock is a property of a machine, not of a method, so the published
+    numbers come from a recorded single-threaded benchmark on one exclusive node
+    (``experiments/timing.slurm``) rather than from whatever laptop happened to
+    build the tables.  The statistical results below are machine-independent and
+    are always measured here.
+    """
+    path = os.path.join(ROOT, "results", "timing.json")
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        t = json.load(fh)
+    return {"train_s": t["train_s_rl"],
+            "gbc_s_per": t["gbc_ms_per_station"] / 1000.0,
+            "mcmc_s_per": t["mcmc_ms_per_station"] / 1000.0,
+            "mle_s_per": t["mle_ms_per_station"] / 1000.0,
+            "source": (f"{t['provenance']['cpu_model']}, 1 thread, "
+                       f"{t['provenance']['host']}, {t['provenance']['stamp']}")}
+
+
 def main():
     df = pd.read_csv(os.path.join(ROOT, "data", "conus_tmax_maxima.csv"), index_col="year")
     cols = [c for c in df.columns if df[c].notna().sum() >= MIN_YEARS]
@@ -143,11 +166,22 @@ def main():
     # Marginal cost is the honest amortisation metric. Total wall-clock favours GBC
     # only once the one-off training is amortised, i.e. beyond the break-even count
     # N* = t_train / t_mcmc_per; below it (e.g. 112 stations) MCMC's total is smaller.
+    bench = authoritative_timing()
+    if bench is not None:
+        print(f"\nusing recorded benchmark timings ({bench['source']}); "
+              f"the in-process figures above are this machine's and are not published")
+        t_train_rl = bench["train_s"]
+        t_gbc_fwd = bench["gbc_s_per"] * Nst
+        t_mcmc_per = bench["mcmc_s_per"]
+        t_mle = bench["mle_s_per"] * Nst
+    else:
+        print("\nWARNING: results/timing.json absent; publishing this machine's "
+              "timings. Run experiments/run_timing.py on the benchmark node.")
     gbc_total = t_train_rl + t_gbc_fwd
     mcmc_total = t_mcmc_per * Nst
     ms_gbc = 1000 * t_gbc_fwd / Nst
     marg_ratio = t_mcmc_per / (t_gbc_fwd / Nst)
-    n_star = t_train_rl / t_mcmc_per
+    n_star = t_train_rl / (t_mcmc_per - t_gbc_fwd / Nst)
     print(f"\nfor {Nst} stations: GBC one-off train {t_train_rl:.0f}s + {t_gbc_fwd:.2f}s forward; "
           f"MCMC {mcmc_total:.0f}s")
     print(f"marginal cost: GBC {ms_gbc:.2f} ms/station vs MCMC {1000*t_mcmc_per:.0f} ms/station "
