@@ -83,12 +83,17 @@ print(f"Energy Score: {energy_score(Y_test[:, order], Z_samples):.4f}")
 | `gbc.metrics` | Ch 5, 7, 8, 14 | CRPS, energy score, coverage, PI width, RMSE |
 | `gbc.plotting` | All chapters | Quantile fan chart, PIT calibration plot |
 | `gbc.utils` | App. B §sec-computing | Seeding, device selection, LR scheduler |
+| `gbc.evt` | Polson and Sokolov (2026, WSC) | GEV/GPD quantiles, return levels, block-maxima summaries |
+| `gbc.evt_inference` | Polson and Sokolov (2026, WSC) | GEV MLE, non-stationary GEV, Hill, RW-Metropolis, GBC-QNN estimators |
+| `gbc.diagnostics` | Polson and Sokolov (2026, WSC) | Rank-normalized split-Rhat, bulk ESS, cost per effective draw |
+| `gbc.shrinkage` | Ch 10 | Horseshoe Gibbs sampler for spatial pooling |
+| `gbc.survivor` | Polson and Sokolov (2026, WSC) | Survivor-integral tail functionals, expected shortfall, MEU |
 
 ## Tests
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ -v       # 125 tests, ~9 seconds
+python -m pytest tests/ -v       # 188 tests, ~13 seconds
 ```
 
 Test files cover each use case with synthetic data:
@@ -104,6 +109,9 @@ Test files cover each use case with synthetic data:
 | `test_ensemble.py` | HetMLP, conformal calibration |
 | `test_financial.py` | MGBC on multivariate returns, portfolio allocation |
 | `test_core.py` | Losses, cosine embedding, utils, data loaders |
+| `test_evt.py`, `test_evt_inference.py` | GEV/GPD, classical baselines, GBC-QNN estimators |
+| `test_survivor.py`, `test_shrinkage.py` | Survivor functionals, horseshoe pooling |
+| `test_diagnostics.py` | Rhat and ESS against AR(1) chains with known autocorrelation |
 
 ## Key Results Reproduced by This Package
 
@@ -114,6 +122,21 @@ Test files cover each use case with synthetic data:
 | Star (CRPS) | 0.013 | MJGP 0.024 | Ch 8 |
 | Rocket AL (RMSE) | 0.00723 | DGP 0.02134 | Ch 9 |
 | Lake temp. (coverage) | 90.2% | GPBC ~85% | Ch 14 |
+
+## Paper Reproduction
+
+`paper-wsc2026/` holds the drivers, station data, and lab notebook behind
+*Generative Bayesian Computation for Extreme Value Theory with Climate
+Applications* (Winter Simulation Conference 2026). One driver per table, the
+derived station series so the study runs without re-contacting NOAA, and the two
+SLURM scripts for the wall-clock benchmark and the training-budget sweep. See
+`paper-wsc2026/README.md` for the table-to-driver map.
+
+```bash
+cd paper-wsc2026
+python experiments/run_pnw.py        # Tables 1 and 2
+python experiments/run_scale.py      # Table 4, then make_figures.py for Figure 1
+```
 
 ## Citing
 
