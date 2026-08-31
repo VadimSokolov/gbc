@@ -18,7 +18,9 @@ stations, so the effect on the published z_100 is measured rather than assumed.
 
     sbatch experiments/epochsel.slurm
 """
+import concurrent.futures as cf
 import json
+import multiprocessing as mp
 import os
 import sys
 import time
@@ -36,7 +38,7 @@ for _cand in (os.path.join(ROOT, "gbc"), ROOT, os.path.dirname(ROOT)):
         sys.path.insert(0, _cand)
         break
 sys.path.insert(0, os.path.join(ROOT, "experiments"))
-from gbc.iqn import IQN, predict_iqn                                # noqa: E402
+from gbc.iqn import IQN, predict_iqn, train_iqn                     # noqa: E402
 from run_scale import _sim_standardised, gbc_rl                     # noqa: E402
 
 STAMP = time.strftime("%Y-%m-%d")
@@ -49,6 +51,14 @@ TAU_GRID = np.array([0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
 MIN_YEARS = 50
 N_RET = 100
 _LEDGER = os.path.join(ROOT, "results", "numbers.txt")
+# Cells are independent trainings, so the sweep parallelises exactly; serial by
+# default so the shipped path stays the simple loop, opt in with GBCEVT_JOBS=n.
+JOBS = int(os.environ.get("GBCEVT_JOBS", "1"))
+
+# The deployed budget must be one of the candidates: the whole point is to
+# compare it against the selected one, and discovering it is missing at the
+# final line costs the entire sweep.  Fail in zero seconds instead.
+assert DEPLOYED in BUDGETS, f"DEPLOYED={DEPLOYED} must appear in BUDGETS={BUDGETS}"
 
 
 def ledger(value, ident, fmt="{:.4g}"):
@@ -75,26 +85,71 @@ def val_pinball(model, Xv, yv, xm, xs, ym, ys):
     return ys * tot / len(TAU_GRID)          # rescale to the target's own units
 
 
-def train_budget(Xtr, ytr, epochs, seed, hdim=256, nh=32, lr=1e-3, wd=1e-4,
-                 w=(0.3, 0.3, 0.4)):
-    """train_iqn with a complete cosine schedule for this budget (T_max=epochs)."""
-    torch.manual_seed(seed)
-    xm, xs = Xtr.mean(0), Xtr.std(0) + 1e-8
-    ym, ys = float(ytr.mean()), float(ytr.std()) + 1e-8
-    Xt = torch.tensor((Xtr - xm) / xs, dtype=torch.float32)
-    yt = torch.tensor((ytr - ym) / ys, dtype=torch.float32)
-    model = IQN(Xtr.shape[1], hdim=hdim, nh=nh)
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs,
-                                                       eta_min=lr * 0.01)
-    model.train()
-    for _ in range(epochs):
-        opt.zero_grad()
-        model.loss_fn(Xt, yt, w).backward()
-        opt.step()
-        sched.step()
-    model.eval()
-    return model, xm, xs, ym, ys
+def train_budget(Xtr, ytr, epochs, seed):
+    """One candidate budget, trained by the *deployed* trainer.
+
+    Calling gbc.iqn.train_iqn rather than reimplementing its loop is the point:
+    a budget selected for a lookalike trainer would not be a budget selected for
+    the network the paper ships.  train_iqn already sets T_max to the budget, so
+    each candidate gets a complete cosine schedule rather than a truncated one.
+    """
+    return train_iqn(Xtr, ytr, epochs=epochs, seed=seed)
+
+
+def split():
+    """The one simulated train/validation split.
+
+    Fixed by an explicit seed so that any process which rebuilds it obtains the
+    identical arrays; that is what lets the sweep be spread over workers without
+    shipping the arrays through a pickle.
+    """
+    X, y = _sim_standardised(N_SIM, "rl", np.random.default_rng(20260831))
+    n_val = int(VAL_FRAC * len(y))
+    return X[:n_val], y[:n_val], X[n_val:], y[n_val:]
+
+
+def run_cell(cell, data=None):
+    """Train one (budget, seed) cell and score it on the held-out simulated half."""
+    E, sd = cell
+    Xv, yv, Xtr, ytr = data if data is not None else _WORKER["data"]
+    t = time.perf_counter()
+    model, xm, xs, ym, ys = train_budget(Xtr, ytr, E, sd)
+    loss = val_pinball(model, Xv, yv, xm, xs, ym, ys)
+    return {"epochs": E, "seed": sd, "val_pinball": loss,
+            "train_s": time.perf_counter() - t}
+
+
+_WORKER = {}
+
+
+def _worker_init():
+    torch.set_num_threads(1)          # one core per cell, no oversubscription
+    _WORKER["data"] = split()
+
+
+def sweep(data):
+    """All (budget, seed) cells, serially or over JOBS processes.
+
+    train_budget seeds the generator per cell, so the two paths return the same
+    numbers; only the wall-clock differs.
+    """
+    cells = [(E, sd) for E in BUDGETS for sd in SEEDS]
+    rows = []
+    if JOBS > 1:
+        with cf.ProcessPoolExecutor(JOBS, mp_context=mp.get_context("spawn"),
+                                    initializer=_worker_init) as ex:
+            it = ex.map(run_cell, cells)
+            for r in it:
+                rows.append(r)
+                print(f"  epochs={r['epochs']:5d} seed={r['seed']}  "
+                      f"val pinball={r['val_pinball']:.5f} ({r['train_s']:.0f}s)")
+    else:
+        for cell in cells:
+            r = run_cell(cell, data)
+            rows.append(r)
+            print(f"  epochs={r['epochs']:5d} seed={r['seed']}  "
+                  f"val pinball={r['val_pinball']:.5f} ({r['train_s']:.0f}s)")
+    return rows
 
 
 def main():
@@ -102,22 +157,10 @@ def main():
           f"budgets={BUDGETS}, n_sim={N_SIM}, val_frac={VAL_FRAC}")
 
     # ── simulated train/validation split; no station data anywhere here ──────
-    X, y = _sim_standardised(N_SIM, "rl", np.random.default_rng(20260831))
-    n_val = int(VAL_FRAC * len(y))
-    Xv, yv, Xtr, ytr = X[:n_val], y[:n_val], X[n_val:], y[n_val:]
-    print(f"train {len(ytr)}, validation {len(yv)}")
+    Xv, yv, Xtr, ytr = data = split()
+    print(f"train {len(ytr)}, validation {len(yv)} (jobs={JOBS})")
 
-    rows = []
-    for E in BUDGETS:
-        for sd in SEEDS:
-            t = time.perf_counter()
-            model, xm, xs, ym, ys = train_budget(Xtr, ytr, E, sd)
-            loss = val_pinball(model, Xv, yv, xm, xs, ym, ys)
-            rows.append({"epochs": E, "seed": sd, "val_pinball": loss,
-                         "train_s": time.perf_counter() - t})
-            print(f"  epochs={E:5d} seed={sd}  val pinball={loss:.5f}  "
-                  f"({rows[-1]['train_s']:.0f}s)")
-    tab = pd.DataFrame(rows)
+    tab = pd.DataFrame(sweep(data))
     agg = tab.groupby("epochs")["val_pinball"].agg(["mean", "std", "min"]).reset_index()
     print("\nvalidation pinball by budget (simulated hold-out):")
     print(agg.to_string(index=False))

@@ -144,7 +144,14 @@ def main():
     # 4. calibration at scale: leave-one-year-out predictive coverage + CRPS (amortised)
     hits = tot = 0
     crps = []
-    for c, x in series.items():
+    n_years = sum(len(x) for x in series.values())
+    t_loyo = time.time()
+    for si, (c, x) in enumerate(series.items()):
+        if si % 10 == 0 and si:
+            el = time.time() - t_loyo
+            print(f"  LOYO {si}/{len(series)} stations, {tot}/{n_years} years, "
+                  f"{el:.0f}s elapsed, ~{el * (n_years / max(tot, 1) - 1):.0f}s left",
+                  flush=True)
         for i in range(len(x)):
             samp = gbc_predict_samples(pr_net, np.delete(x, i), B=400)
             lo, hi = np.quantile(samp, [0.05, 0.95])

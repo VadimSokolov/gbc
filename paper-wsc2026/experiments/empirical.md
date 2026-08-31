@@ -29,20 +29,61 @@ GEG 1890-2025 (n=136), EUG 1938-2025 (n=88), PDT 1928-2025 (n=98).
 | GBC + Horseshoe | `simulate_hierarchical_training_data` + `horseshoe_posterior` | ours (spatial) |
 
 ### 1.1 GBC-QNN hyperparameters (validated)
-IQN: hdim/nh/lr per `gbc.iqn` defaults. Predictive IQN trains on `simulate_gev_training_data`
-(target = fresh GEV draw); functional IQN targets `z_N(theta)`. n_sim=20000-40000, epochs=1500.
-**Undertraining check:** epochs<=700 gives diffuse predictive (CRPS~16, coverage 1.0); epochs>=1500
-calibrates (predictive q[.05,.5,.95] match empirical within 0.5 degC).
+IQN: hdim/nh/lr per `gbc.iqn` defaults, i.e. full-batch Adam, lr 1e-3, weight decay 1e-4, cosine
+annealing with T_max set to the budget. Predictive IQN trains on `simulate_gev_training_data`
+(target = fresh GEV draw); functional IQN targets `z_N(theta)`. n_sim=20000-40000; the amortized
+nets behind tab:scale use 2000 full-batch steps.
+
+### 1.2 Training-budget selection (`run_epochsel.py`, 2026-08-31)
+The justification that stood here was leaky. It read:
+
+> **Undertraining check:** epochs<=700 gives diffuse predictive (CRPS~16, coverage 1.0);
+> epochs>=1500 calibrates (predictive q[.05,.5,.95] match empirical within 0.5 degC).
+
+Both halves of that check are computed against the *observed* station record, so the budget was
+tuned, however weakly, on the data the paper then evaluates on. Replaced by a rule that lives
+entirely inside the simulator: 60000 prior-predictive draws split 75/25, six candidate budgets x
+3 seeds, each cell trained by the *deployed* `gbc.iqn.train_iqn` (not a lookalike loop) and scored
+by mean pinball loss over tau in {.05,.1,.25,.5,.75,.9,.95} on the held-out simulated quarter.
+A GBC network is amortized and never sees a station during training, so a selection touching only
+the simulator leaves the station evaluation untouched by construction: the outer loop over
+stations is nested outside a selection that cannot see it.
+
+| epochs | val pinball (mean of 3 seeds) | sd |
+|--------|--------|---------|
+| 250    | 0.20859 | 0.00953 |
+| 500    | 0.19095 | 0.00210 |
+| 1000   | 0.18582 | 0.00034 |
+| 2000   | 0.18309 | 0.00014 |
+| 3000   | 0.18212 | 0.00018 |
+| 4000   | **0.18161** | 0.00012 |
+
+Selected 4000; the deployed 2000 is +0.81% worse. Refitting the amortized net at 4000 and
+re-scoring all 112 CONUS stations moves z100 by median 0.046 degC, max 0.249 degC, r=0.9998, so
+neither tab:scale nor fig:scale turns on the budget. Seed spread collapses as the budget grows
+(sd 0.0095 at 250 down to 0.00012 at 4000), so the sweep is ranking signal, not noise.
+
+**Cross-machine check.** The identical sweep ran independently on a Hopper Intel Xeon Gold 6240R
+node (job 9504749, 16 threads) and on the local 8-core machine. All 18 cells agree to within
+0.008%, and both select 4000 (deployed excess +0.81% local, +0.82% Hopper).
 
 ## 2. Experiment plan (paper table/figure -> experiment)
 
 | Paper object | Experiment | Script | Compute |
 |--------------|-----------|--------|---------|
-| Table `tab:rl` + Fig survivor/comparison | SEA 6-method return levels, LOYO CRPS/coverage | `run_pnw.py` | local CPU |
-| Table `tab:spatial` + Fig horseshoe | 5-station xi MLE vs horseshoe, kappa, trends | `run_pnw.py` | local CPU |
-| Table `tab:attr` + Fig records | heat-dome record probabilities, 4 models | `run_pnw.py` | local CPU |
-| Fig threshold, Fig meu | GBC threshold posterior; MEU activation threshold | `run_pnw.py` | local CPU |
-| Table `tab:sim` | sim study: R reps, GEV(35,3,0.1), n=70; NS and threshold sims | `run_sim.py --rep` | **Hopper** CPU array (Intel hop nodes, no GPU) |
+| Table 1 `tab:rl` | SEA 6-method return levels, LOYO CRPS/coverage | `run_pnw.py` | local CPU |
+| Table 2 `tab:spatial` | 5-station xi MLE vs horseshoe, kappa, trends | `run_pnw.py` | local CPU |
+| Table 3 `tab:attr` | heat-dome exceedance probabilities, 4 models | `run_attr.py` | local CPU |
+| Table 4 `tab:scale`, Fig 1 `fig:scale` | 112-station amortized z100, LOYO calibration, agreement | `run_scale.py` then `make_figures.py` | local CPU (statistics); **Hopper** Intel node (timings) |
+| Table 5 `tab:heavytail` | 103-station precipitation, 25-yr subsamples, clustered bootstrap | `run_heavytail.py` | local CPU |
+| Table 6 `tab:sim` | sim study: R=300 reps, GEV(35,3,xi), n=70, three tail regimes | `run_sim.py` | **Hopper** CPU array (Intel hop nodes, no GPU) |
+| Wall-clock + MCMC diagnostics | pinned single-thread timings, 4 chains/station, Rhat and ESS | `run_timing.py` (`timing.slurm`) | **Hopper** Intel hop node, exclusive, 1 thread |
+| Training-budget selection | validation pinball on held-out simulated draws, 6 budgets x 3 seeds | `run_epochsel.py` (`epochsel.slurm`) | local CPU, 8 worker processes; cross-checked on **Hopper** Intel node |
+
+Wall-clock is a property of a machine, so the published timings come only from
+`run_timing.py` on the recorded benchmark node. `run_scale.py` reads
+`results/timing.json` when it exists and prints a warning when it does not, so a
+laptop rebuild of the tables cannot silently publish a laptop's timings.
 
 ## 3. Real results — Seattle return levels (tab:rl) — `run_pnw.py`, 2026-06-17
 
