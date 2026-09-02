@@ -20,6 +20,8 @@ GPD(sigma, xi):
     H(y) = 1 - (1 + xi*y/sigma)^{-1/xi},  y > 0
 """
 
+import math
+
 import numpy as np
 from typing import Callable
 
@@ -206,6 +208,14 @@ def poisson_loglik(
     exceedances above threshold u follow a Poisson process with
     GPD marks.
 
+    Reference implementation, not a code path behind any published number.
+    Every study in the WSC 2026 paper is a block-maxima study, so no driver
+    calls this and no network is trained on exceedances; the paper says as
+    much.  It is kept, and covered by ``TestPoissonExponentMeasure``, because
+    the formulation is one of the paper's claims and a claim you cannot run is
+    worth less than one you can.  Anyone extending the work to daily series
+    starts here.
+
     Parameters
     ----------
     y : (n,) all observations.
@@ -232,21 +242,81 @@ def poisson_loglik(
         if np.any(z <= 0):
             return -np.inf
 
-    # Expected number of exceedances
-    zeta_u = float(gev_survivor(u, mu, sigma, xi))
-    if zeta_u <= 0:
+    # Expected number of exceedances per block: the exponent measure
+    #   Lambda(u) = (1 + xi (u - mu) / sigma)^(-1/xi),
+    # which is the intensity of the Poisson process representation.  It is NOT
+    # the GEV survivor 1 - exp(-Lambda): that is the probability a block maximum
+    # exceeds u, the binomial view, and it understates the Poisson mean by 5% at
+    # a 0.90 threshold and more at lower ones.
+    if abs(xi) < 1e-8:
+        lam_u = float(np.exp(-(u - mu) / sigma))
+    else:
+        t_u = 1.0 + xi * (u - mu) / sigma
+        if t_u <= 0:
+            return -np.inf
+        lam_u = float(t_u ** (-1.0 / xi))
+    if not np.isfinite(lam_u) or lam_u <= 0:
         return -np.inf
 
     # GPD density of exceedances
     exc_shifted = exc - u
     log_gpd = np.sum(np.log(np.maximum(gpd_density(exc_shifted, sigma_u, xi), 1e-300)))
 
-    # Poisson count term
-    ll = -n * zeta_u + n_u * np.log(zeta_u) + log_gpd
+    # Poisson count term: N(u) ~ Poisson(n * Lambda(u)), constants in n_u dropped
+    ll = -n * lam_u + n_u * np.log(lam_u) + log_gpd
     return float(ll)
 
 
 # ── Prior-predictive simulation for GBC training ───────────────────
+
+def _truncated_normal(rng, mean: float, sd: float,
+                      lo: float, hi: float) -> float:
+    """One draw from N(mean, sd^2) conditioned on [lo, hi].
+
+    Clipping is not truncation: it moves the rejected tail mass onto the
+    endpoints as point masses.  With xi ~ N(0, 0.3^2) on [-0.8, 0.5] that is a
+    4.8% atom at the upper bound, which the prior-predictive training set then
+    teaches the network.  Inverse-CDF sampling gives the density the docstrings
+    and the paper actually claim.
+    """
+    a, b = (lo - mean) / sd, (hi - mean) / sd
+    lo_p, hi_p = _std_norm_cdf(a), _std_norm_cdf(b)
+    u = rng.uniform(lo_p, hi_p)
+    return float(mean + sd * _std_norm_ppf(u))
+
+
+def _std_norm_cdf(z: float) -> float:
+    return 0.5 * math.erfc(-z / math.sqrt(2.0))
+
+
+def _std_norm_ppf(p: float) -> float:
+    """Inverse standard normal CDF (Acklam's rational approximation, ~1e-9)."""
+    if p <= 0.0:
+        return -np.inf
+    if p >= 1.0:
+        return np.inf
+    a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00]
+    b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01]
+    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00]
+    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00]
+    pl, ph = 0.02425, 1 - 0.02425
+    if p < pl:
+        q = math.sqrt(-2 * math.log(p))
+        return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / \
+               ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)
+    if p > ph:
+        q = math.sqrt(-2 * math.log(1 - p))
+        return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / \
+                ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)
+    q = p - 0.5
+    r = q * q
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / \
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)
+
 
 def simulate_gev_training_data(
     n_sim: int,
@@ -294,8 +364,8 @@ def simulate_gev_training_data(
         mu = rng.normal(mu_prior[0], mu_prior[1])
         log_sigma = rng.normal(log_sigma_prior[0], log_sigma_prior[1])
         sigma = np.exp(log_sigma)
-        xi = rng.normal(xi_prior[0], xi_prior[1])
-        xi = np.clip(xi, xi_bounds[0], xi_bounds[1])
+        xi = _truncated_normal(rng, xi_prior[0], xi_prior[1],
+                              xi_bounds[0], xi_bounds[1])
 
         # Simulate block maxima
         u = rng.uniform(0, 1, size=n_obs)
@@ -354,7 +424,8 @@ def simulate_gpd_training_data(
     for _ in range(n_sim):
         log_sigma = rng.normal(log_sigma_prior[0], log_sigma_prior[1])
         sigma = np.exp(log_sigma)
-        xi = np.clip(rng.normal(xi_prior[0], xi_prior[1]), xi_bounds[0], xi_bounds[1])
+        xi = _truncated_normal(rng, xi_prior[0], xi_prior[1],
+                              xi_bounds[0], xi_bounds[1])
 
         u = rng.uniform(0, 1, size=n_exc)
         data = gpd_quantile(u, sigma, xi)
@@ -419,7 +490,8 @@ def simulate_nonstationary_gev_training_data(
         mu0 = rng.normal(mu0_prior[0], mu0_prior[1])
         mu1 = rng.normal(mu1_prior[0], mu1_prior[1])
         sigma = np.exp(rng.normal(log_sigma_prior[0], log_sigma_prior[1]))
-        xi = np.clip(rng.normal(xi_prior[0], xi_prior[1]), xi_bounds[0], xi_bounds[1])
+        xi = _truncated_normal(rng, xi_prior[0], xi_prior[1],
+                              xi_bounds[0], xi_bounds[1])
 
         # Covariate values
         T = rng.uniform(covariate_range[0], covariate_range[1], size=n_obs)

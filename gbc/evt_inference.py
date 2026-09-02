@@ -5,7 +5,8 @@ simulation) and ``survivor.py`` (functionals of a trained IQN) with the estimato
 used to compare GBC against classical extreme-value inference:
 
 Classical
-    fit_stationary_gev, fit_ns_gev, ns_params_at, hill, gev_mcmc, return_level_ci_delta
+    fit_stationary_gev, fit_ns_gev, ns_params_at, hill, gev_logprior, gev_mcmc,
+    return_level_ci_delta
 GBC-QNN (amortized: train once on prior-predictive draws, apply by a forward pass)
     gbc_priors_from_data, train_predictive_iqn, train_functional_iqn,
     gbc_return_level_posterior, gbc_predictive_samples, gbc_crps_coverage_loyo
@@ -92,6 +93,26 @@ def hill(x, k):
     return float(np.mean(np.log(xs[:k])) - np.log(xs[k]))
 
 
+def gev_logprior(p, mu_ref, sig_ref):
+    """Log prior density of (mu, sigma, xi), as a density in sigma.
+
+    The priors are stated on mu, *log* sigma and xi, but the sampler walks on
+    sigma, so this must be a density with respect to Lebesgue measure on sigma:
+    p(sigma) = N(log sigma; log sigma_ref, 0.5^2) / sigma.  Dropping the
+    1/sigma Jacobian shifts the effective prior on log sigma to
+    N(log sigma_ref + 0.25, 0.5^2), which centres sigma 28% high.  Exposed as a
+    function so the prior can be tested on its own rather than only through the
+    chain, where a long record hides a prior this wrong.
+    """
+    mu, sigma, xi = p
+    if sigma <= 0 or xi < -1 or xi > 2:
+        return -np.inf
+    return float(-0.5 * ((mu - mu_ref) / 5.0) ** 2
+                 - 0.5 * ((np.log(sigma) - np.log(sig_ref)) / 0.5) ** 2
+                 - np.log(sigma)
+                 - 0.5 * (xi / 0.3) ** 2)
+
+
 def gev_mcmc(x, n_iter=30000, burn=10000, thin=5, seed=0):
     """Random-walk Metropolis for the GEV with weakly-informative priors (Coles 1996).
 
@@ -104,12 +125,9 @@ def gev_mcmc(x, n_iter=30000, burn=10000, thin=5, seed=0):
     mu_ref, sig_ref = np.mean(x), np.std(x, ddof=1)
 
     def logpost(p):
-        mu, sigma, xi = p
-        if sigma <= 0 or xi < -1 or xi > 2:
+        lp = gev_logprior(p, mu_ref, sig_ref)
+        if not np.isfinite(lp):
             return -np.inf
-        lp = (-0.5 * ((mu - mu_ref) / 5.0) ** 2
-              - 0.5 * ((np.log(sigma) - np.log(sig_ref)) / 0.5) ** 2
-              - 0.5 * (xi / 0.3) ** 2)
         return lp - gev_nll(p, x)
 
     cur = _init(x)
@@ -172,10 +190,18 @@ def _sim(n_sim, n_obs, pr, seed):
                                       xi_prior=pr["xi_prior"], xi_bounds=pr["xi_bounds"], seed=seed)
 
 
-def train_predictive_iqn(x, n_sim=40000, epochs=1500, seed=0):
-    """Train the predictive IQN (target = a fresh GEV draw) for CRPS/coverage."""
+def train_predictive_iqn(x, n_sim=40000, epochs=1500, seed=0, tail=True, tau0=0.9):
+    """Train the predictive IQN (target = a fresh GEV draw) for CRPS/coverage.
+
+    The tail head is on by default here and off in ``train_functional_iqn``, and
+    the asymmetry is deliberate: this network models the data distribution, so
+    tau indexes the tail of a new annual maximum and the far tail must
+    extrapolate.  The functional network's target is the scalar z_N, so its tau
+    indexes posterior uncertainty about a parameter, which is concentrated and
+    needs no parametric tail.
+    """
     d = _sim(n_sim, len(x), gbc_priors_from_data(x), seed)
-    return train_iqn(d["X"], d["y"], epochs=epochs, seed=seed)
+    return train_iqn(d["X"], d["y"], epochs=epochs, seed=seed, tail=tail, tau0=tau0)
 
 
 def train_functional_iqn(x, N=100, n_sim=40000, epochs=1500, seed=1):

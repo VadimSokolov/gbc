@@ -186,7 +186,12 @@ def horseshoe_posterior(
         tau2 = max(tau2, 1e-30)
 
         # Update eta (half-Cauchy auxiliary for tau)
-        eta = 1.0 / rng.gamma(1.0, 1.0 / (1.0 + 1.0 / (tau2 / (global_tau ** 2) + 1e-30)))
+        # eta | tau^2 ~ InvGamma(1, 1/tau0^2 + 1/tau^2) for tau ~ C+(0, tau0).
+        # Writing the rate as 1 + tau0^2/tau^2 scales it by tau0^2, which for the
+        # spatial fit (tau0 = sd(xi_mle) ~ 0.058) inflates tau by ~30x and all but
+        # removes the global shrinkage the horseshoe is there to provide.
+        eta = 1.0 / rng.gamma(
+            1.0, 1.0 / (1.0 / (global_tau ** 2) + 1.0 / (tau2 + 1e-30)))
 
         theta_samples[it] = theta
 

@@ -20,7 +20,9 @@ for _cand in (os.path.join(ROOT, "gbc"), ROOT, os.path.dirname(ROOT)):
         break
 from gbc.evt import gev_survivor, gev_quantile
 from gbc.evt_inference import (fit_stationary_gev, fit_ns_gev, ns_params_at,
-                               train_predictive_iqn, gbc_predictive_samples)
+                               train_predictive_iqn, gbc_predictive_samples,
+                               _feat)
+from gbc.iqn import predict_iqn
 
 STAMP = date.today().isoformat()
 HD = 42.2                      # 2021 Seattle-Tacoma JJA maximum (degC)
@@ -86,6 +88,11 @@ def main():
     trained = train_predictive_iqn(x23, n_sim=30000, epochs=1500, seed=0)
     samp = gbc_predictive_samples(trained, x23, B=4000).ravel()
     p_gbc = float(np.mean(samp >= HD))
+    # The prose reports p_gbc as a count out of the grid size, because that is
+    # what says how thin the estimate is; ledger both so neither can go stale.
+    n_exc = int(np.sum(samp >= HD))
+    ledger(n_exc, "attr:gbc_n_exceed", "{:.0f}")
+    ledger(samp.size, "attr:gbc_n_draw", "{:.0f}")
 
     # parametric bootstrap CI for the NS quantities
     rng = np.random.default_rng(7)
@@ -96,8 +103,18 @@ def main():
         q50 = float(gev_survivor(HD, *ns_params_at(fb, T1950)))
         q23 = float(gev_survivor(HD, *ns_params_at(fb, T2023)))
         b50.append(q50); b23.append(q23); brr.append((q23 / q50) if q50 > 0 else np.inf)
-    # GBC bootstrap CI from the predictive draws
-    pg = [float(np.mean(rng.choice(samp, size=len(samp), replace=True) >= HD)) for _ in range(400)]
+    # GBC CI by resampling the conditioning record, not the returned values.
+    # gbc_predictive_samples evaluates the quantile function on a deterministic
+    # evenly spaced tau grid, so it carries no Monte Carlo noise to resample;
+    # bootstrapping it would report sampling variability the estimate does not
+    # have.  Amortization is what makes the honest version cheap: each replicate
+    # is a forward pass on a resampled summary, with no retraining.  This still
+    # covers only record uncertainty, not the prior, the trend form or the fit.
+    model, xm, xs, ym, ys = trained
+    Xb = np.vstack([_feat(rng.choice(x23, size=len(x23), replace=True))
+                    for _ in range(400)])
+    Qb = predict_iqn(model, Xb, xm, xs, ym, ys, np.linspace(0.005, 0.995, 4000))
+    pg = list(np.mean(Qb >= HD, axis=0))          # (n_tau, n_boot) -> per replicate
 
     def ci_rp(arr):
         r = np.array([rp(v) for v in arr])
@@ -129,6 +146,11 @@ def main():
         tag = "_".join(t for t in tag if t not in ("climate", "full", "record"))
         ledger(p, f"attr:{tag}:p")
         ledger(min(r, 1e6), f"attr:{tag}:rp")
+        # Interval endpoints belong in the ledger too: they are printed in the
+        # table and quoted in the prose, so a reader must be able to trace them.
+        if ci is not None:
+            ledger(min(ci[0], 1e6), f"attr:{tag}:rp_lo")
+            ledger(min(ci[1], 1e6), f"attr:{tag}:rp_hi")
     ledger(rr, "attr:risk_ratio", "{:.2f}")
     ledger(rr_med, "attr:risk_ratio_bootmedian", "{:.2f}")
     ledger(frac_inc, "attr:frac_increase", "{:.3f}")
@@ -141,12 +163,18 @@ def main():
             cis = "n/a" if ci is None else f"[{fmt_rp(ci[0])}, {fmt_rp(ci[1])}]"
             fh.write(f"{name} & {fmt_p(p)} & {fmt_rp(r)} & {cis} \\\\\n")
         fh.write("\\midrule\n")
+        # The footer used to say the GBC row "avoids that instability", written
+        # when its interval came from bootstrapping a deterministic quantile
+        # grid and so looked tight.  Resampling the conditioning record instead
+        # gives an interval spanning three orders of magnitude, so the footer
+        # now reports what the columns actually show.
         fh.write(f"\\multicolumn{{4}}{{p{{0.92\\linewidth}}}}{{\\small Warming risk ratio "
                  f"(2023 vs.\\ 1950): ${rr:.0f}\\times$ (point), with the direction of the change "
-                 f"reproduced in {frac_inc:.0%}".replace("%", "\\%") + " of bootstrap refits.  Parametric return-period "
-                 f"intervals are wide because 42.2$^\\circ$C lies near the estimated upper "
-                 f"endpoint; the GBC-QNN row avoids that instability but rests on a small "
-                 f"exceedance count.}} \\\\\n")
+                 f"reproduced in {frac_inc:.0%}".replace("%", "\\%") + " of bootstrap refits.  No "
+                 f"return-period interval here is informative: the parametric ones are unbounded "
+                 f"above because 42.2$^\\circ$C lies near the estimated upper endpoint, and the "
+                 f"GBC-QNN interval, which resamples the conditioning record, still spans three "
+                 f"orders of magnitude on {n_exc} exceedances out of {samp.size} draws.}} \\\\\n")
         fh.write("\\bottomrule\n\\end{tabular}\n")
     print("\nwrote tab/attr.tex and appended results/numbers.txt")
 

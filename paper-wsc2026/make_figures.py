@@ -30,7 +30,12 @@ plt.rcParams.update({
     "savefig.bbox": "tight", "savefig.pad_inches": 0.05,
 })
 BLUE, RED, GRAY, ORANGE, GREEN = "#1A3A5C", "#C0392B", "#888888", "#E67E22", "#27AE60"
-FIG = os.path.join(ROOT, "wsc", "fig")   # the manuscript reads wsc/fig (matches \includegraphics)
+# The paper tree keeps figures in wsc/fig, which is what \includegraphics reads.
+# The released bundle has no wsc/ tree, and os.makedirs would have silently
+# created gbc/paper-wsc2026/wsc/fig while the bundle README promised fig/, so a
+# reader following the README would have found an empty directory.
+FIG = (os.path.join(ROOT, "wsc", "fig") if os.path.isdir(os.path.join(ROOT, "wsc"))
+       else os.path.join(ROOT, "fig"))
 STATIONS = ["SEA", "PDX", "GEG", "EUG", "PDT"]
 T1950, T2023, T2050, HD = -0.227, 1.100, 1.500, 42.2
 
@@ -55,6 +60,26 @@ def ledger_dict():
             if len(parts) >= 3:
                 out[parts[2]] = float(parts[0])
     return out
+
+
+def ledger_write(rows):
+    """Append value/source/identifier/date rows, replacing this script's own.
+
+    The MEU activation thresholds are computed here and nowhere else, but they
+    are quoted in the prose, so they have to be traceable like every other
+    number.  Same read-filter-write contract as the drivers in experiments/.
+    """
+    import time
+    path = os.path.join(ROOT, "results", "numbers.txt")
+    stamp = time.strftime("%Y-%m-%d")
+    keep = []
+    if os.path.exists(path):
+        with open(path) as fh:
+            keep = [ln for ln in fh if "\tmake_figures.py\t" not in ln]
+    with open(path, "w") as fh:
+        fh.writelines(keep)
+        for value, ident, fmt in rows:
+            fh.write(f"{fmt.format(value)}\tmake_figures.py\t{ident}\t{stamp}\n")
 
 
 def xi_se(x):
@@ -169,12 +194,14 @@ def fig_meu(d, h):
     nsf = fit_ns_gev(x, T)
     rng = np.random.default_rng(1); M = 200000; lam = 1.5
     a = np.linspace(34, 44, 300)
+    stars = []
     fig, ax = plt.subplots(figsize=(6.2, 4.0))
     for Tc, lab, col in [(T2023, "2023 climate", ORANGE), (T2050, "2050 (proj.)", RED)]:
         xs = gev_quantile(rng.uniform(size=M), *ns_params_at(nsf, Tc))
         loss = np.array([np.mean(np.clip(xs - ai, 0, None) ** 2) + lam * ai for ai in a])
         ax.plot(a, loss, color=col, lw=2, label=lab)
         astar = a[int(np.argmin(loss))]
+        stars.append((float(astar), "meu:astar_2023" if Tc == T2023 else "meu:astar_2050"))
         ax.axvline(astar, color=col, ls=":", lw=1.2)
         ax.annotate(f"$a^*$={astar:.1f}", (astar, loss.min()), textcoords="offset points",
                     xytext=(4, 10), color=col, fontsize=9)
@@ -183,6 +210,8 @@ def fig_meu(d, h):
     ax.set_title(f"MEU activation threshold ($\\lambda={lam}$): $a^*$ rises with warming")
     ax.legend(frameon=False)
     fig.savefig(os.path.join(FIG, "meu_threshold.pdf")); plt.close(fig)
+    ledger_write([(v, ident, "{:.2f}") for v, ident in stars]
+                 + [(lam, "meu:lambda", "{:.2f}")])
 
 
 def fig_threshold():
@@ -266,23 +295,37 @@ def fig_scale_panels(L):
         a1.set_xlabel("longitude"); a1.set_ylabel("latitude"); a1.set_aspect(1.25)
         a1.set_title(f"100-year levels, {len(m)} stations")
 
-        a2.loglog(n, mcmc, color=RED, lw=2.0,
-                  label=f"MCMC, {1000*L['scale:mcmc_s_per']:.0f} ms/station")
-        a2.loglog(n, gbc, color=BLUE, lw=2.0,
-                  label=f"GBC, {L['scale:t_train']:.0f} s + {L['scale:ms_per_station']:.2f} ms/station")
-        a2.axvline(nstar, color=GRAY, ls="--", lw=1)
-        a2.text(nstar * 1.35, gbc.min() * 1.2,
-                f"break-even\n$\\approx${int(round(nstar/100)*100)}", fontsize=8,
-                color=GRAY, va="bottom")
-        a2.axvline(n0, color="k", ls=":", lw=1)
-        a2.text(n0 * 0.8, gbc.min() * 1.2, f"{int(n0)}\n(this study)",
-                fontsize=8, ha="right", va="bottom")
+        a2.loglog(n, mcmc, color=RED, lw=2.0, label="MCMC")
+        a2.loglog(n, gbc, color=BLUE, lw=2.0, label="GBC (amortized)")
+        # The two rules stop just above the GBC curve rather than spanning the
+        # full height: they mark x positions, they only have to reach the curves
+        # they mark, and a full-height rule ruled straight through the legend.
+        # Their labels are short and vertical, in the clear strip beside each.
+        # "break-even" and "(this study)" used to sit here horizontally at
+        # mid-height, across both curves; the caption is where they belong.
+        y_lo = a2.get_ylim()[0]
+        y_rule = 1.7 * float(gbc.max())
+        a2.vlines(nstar, y_lo, y_rule, color=GRAY, ls="--", lw=1)
+        a2.text(nstar * 1.25, 1.6 * mcmc.min(), f"{int(round(nstar / 100) * 100)}",
+                fontsize=8, color=GRAY, rotation=90, ha="left", va="bottom")
+        a2.vlines(n0, y_lo, y_rule, color="k", ls=":", lw=1)
+        # At n0 the two curves are far apart, so the label goes in the band
+        # between them rather than near the axis, where the MCMC line runs.
+        a2.text(n0 * 1.25, float(np.sqrt(n0 * L["scale:mcmc_s_per"] * L["scale:t_train"])),
+                f"{int(n0)}", fontsize=8, rotation=90, ha="left", va="center")
+        a2.set_ylim(bottom=y_lo)
         a2.set_xlabel("number of locations inferred")
         a2.set_ylabel("cumulative wall-clock (s)")
-        a2.set_title(f"Marginal cost ${int(L['scale:marginal_ratio'])}\\times$ lower (log-log)")
-        # upper-left is occupied by the two annotated vertical rules; the curves
-        # leave the lower-right corner free.
-        a2.legend(frameon=False, loc="lower right", borderaxespad=0.2)
+        # round, not int: int(350.9) is 350 and the prose says 351.  "(log-log)"
+        # is dropped: both axis scales are already visible from the ticks.
+        a2.set_title(f"Marginal cost ${round(L['scale:marginal_ratio'])}\\times$ lower")
+        # Bare curve names, not rates.  At 9pt (the WSC floor) a label carrying
+        # "1664 s + 1.053 ms/station" is wider than the panel and overhung the
+        # left spine; the rates are in the body text and the caption, and what
+        # the panel is for is the shape of the two curves and where they cross.
+        # Upper left is the one region neither curve enters.
+        a2.legend(frameon=False, loc="upper left", borderaxespad=0.3,
+                  handlelength=1.4, labelspacing=0.3)
 
         fig.tight_layout(pad=0.4, w_pad=1.4)
         fig.savefig(os.path.join(FIG, "scale_panels.pdf")); plt.close(fig)

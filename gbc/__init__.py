@@ -1,5 +1,5 @@
 """
-gbc — Generative Bayesian Computation
+gbc: Generative Bayesian Computation
 ======================================
 
 Python package for the textbook:
@@ -77,7 +77,7 @@ from gbc.evt_inference import (
     gbc_return_level_posterior, gbc_predictive_samples, gbc_crps_coverage_loyo,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 __all__ = [
     "IQN", "train_iqn", "sample_iqn", "predict_iqn",
     "HetMLP",

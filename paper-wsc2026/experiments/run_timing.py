@@ -64,6 +64,16 @@ REPEATS_SLOW = 3              # MCMC
 _LEDGER = os.path.join(ROOT, "results", "numbers.txt")
 
 
+def reset_ledger():
+    """Drop this script's previous rows so a re-run replaces rather than duplicates."""
+    if not os.path.exists(_LEDGER):
+        return
+    with open(_LEDGER) as fh:
+        keep = [ln for ln in fh if "\trun_timing.py\t" not in ln]
+    with open(_LEDGER, "w") as fh:
+        fh.writelines(keep)
+
+
 def ledger(value, ident, fmt="{:.4g}"):
     with open(_LEDGER, "a") as fh:
         fh.write(f"{fmt.format(value)}\trun_timing.py\t{ident}\t{STAMP}\n")
@@ -112,6 +122,7 @@ def _median_spread(times, n_units):
 
 
 def main():
+    reset_ledger()
     prov = provenance()
     print("=" * 74)
     for k, v in prov.items():

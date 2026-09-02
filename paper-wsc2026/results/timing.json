@@ -1,0 +1,54 @@
+{
+  "provenance": {
+    "stamp": "2026-09-01",
+    "host": "hop063.orc.gmu.edu",
+    "slurm_job": "9513413",
+    "slurm_nodelist": "hop063",
+    "slurm_partition": "normal",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz",
+    "cpu_count_visible": 48,
+    "cpus_per_task": "48",
+    "threads_torch": 1,
+    "omp_num_threads": "1",
+    "platform": "Linux-4.18.0-553.137.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "python": "3.10.8",
+    "numpy": "1.24.4",
+    "torch": "2.5.1+cu121"
+  },
+  "n_stations": 112,
+  "n_mcmc_stations": 25,
+  "n_chains": 4,
+  "mcmc_config": {
+    "n_iter": 12000,
+    "burn": 4000,
+    "thin": 4,
+    "draws_per_chain": 2000
+  },
+  "repeats": {
+    "fast": 20,
+    "slow": 3
+  },
+  "train_s_rl": 1663.5728477509692,
+  "gbc_ms_per_station": 1.0531223462229329,
+  "gbc_ms_range": [
+    1.045396235505385,
+    1.075593987479806
+  ],
+  "mle_ms_per_station": 8.67003674751946,
+  "mle_ms_range": [
+    8.644717229929354,
+    9.110484862633582
+  ],
+  "mcmc_ms_per_station": 374.80013985186815,
+  "mcmc_ms_range": [
+    374.3786435946822,
+    375.27462258934975
+  ],
+  "marginal_ratio": 355.8942046915104,
+  "breakeven_locations": 4451.066549917932,
+  "mcmc_worst_rhat": 1.0148706084349155,
+  "mcmc_min_ess": 260.40483221129784,
+  "mcmc_median_ess_z100": 1072.5646314668595,
+  "mcmc_stations_rhat_above_1p01": 3,
+  "mcmc_ms_per_effective_z100_draw": 0.3494429415775947
+}

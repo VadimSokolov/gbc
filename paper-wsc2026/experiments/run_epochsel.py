@@ -61,6 +61,16 @@ JOBS = int(os.environ.get("GBCEVT_JOBS", "1"))
 assert DEPLOYED in BUDGETS, f"DEPLOYED={DEPLOYED} must appear in BUDGETS={BUDGETS}"
 
 
+def reset_ledger():
+    """Drop this script's previous rows so a re-run replaces rather than duplicates."""
+    if not os.path.exists(_LEDGER):
+        return
+    with open(_LEDGER) as fh:
+        keep = [ln for ln in fh if "\trun_epochsel.py\t" not in ln]
+    with open(_LEDGER, "w") as fh:
+        fh.writelines(keep)
+
+
 def ledger(value, ident, fmt="{:.4g}"):
     with open(_LEDGER, "a") as fh:
         fh.write(f"{fmt.format(value)}\trun_epochsel.py\t{ident}\t{STAMP}\n")
@@ -153,6 +163,7 @@ def sweep(data):
 
 
 def main():
+    reset_ledger()
     print(f"budget selection on simulated data only; seeds={SEEDS}, "
           f"budgets={BUDGETS}, n_sim={N_SIM}, val_frac={VAL_FRAC}")
 
@@ -200,6 +211,10 @@ def main():
     with open(os.path.join(ROOT, "results", "epoch_selection.json"), "w") as fh:
         json.dump(out, fh, indent=2)
 
+    # The deployed budget is a design constant, not a measurement, but the paper
+    # prints it beside the selected one, and a printed number with no ledger row
+    # is a number nobody can check.
+    ledger(DEPLOYED, "epochsel:deployed_epochs", "{:.0f}")
     ledger(best, "epochsel:selected_epochs", "{:.0f}")
     ledger(rel, "epochsel:deployed_excess_pct", "{:.2f}")
     ledger(float(np.median(d)), "epochsel:z100_median_abs_diff", "{:.3f}")

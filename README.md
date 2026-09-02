@@ -1,9 +1,9 @@
-# gbc — Generative Bayesian Computation
+# gbc: Generative Bayesian Computation
 
 GBC replaces MCMC with a neural network trained by SGD. The core idea:
 simulate `(θ, y)` pairs from the prior and likelihood, train an
 **Implicit Quantile Network (IQN)** on the pinball loss, and obtain
-posterior quantiles for any observed dataset via a single forward pass —
+posterior quantiles for any observed dataset via a single forward pass,
 no chains, no burn-in, no likelihood evaluation.
 
 ## Installation

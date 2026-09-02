@@ -1,4 +1,4 @@
-# Reproduction bundle — Polson and Sokolov, WSC 2026
+# Reproduction bundle: Polson and Sokolov, WSC 2026
 
 Everything behind *Generative Bayesian Computation for Extreme Value Theory with
 Climate Applications* (Winter Simulation Conference 2026): the drivers that write
@@ -27,7 +27,7 @@ from this directory whether or not `gbc` is installed.
 |---|---|---|
 | Table 1 (Seattle return levels) | `experiments/run_pnw.py` | `tab/rl.tex` |
 | Table 2 (horseshoe shrinkage of ξ) | `experiments/run_pnw.py` | `tab/spatial.tex` |
-| Table 3 (2021 heat-dome attribution) | `experiments/run_attr.py` | `tab/attr.tex` |
+| Table 3 (2021 heat-dome conditional risk) | `experiments/run_attr.py` | `tab/attr.tex` |
 | Table 4 (continental amortization) | `experiments/run_scale.py` | `tab/scale.tex`, `results/scale_map.csv` |
 | Table 5 (heavy-tailed precipitation) | `experiments/run_heavytail.py` | `tab/heavytail.tex` |
 | Table 6 (simulation study) | `experiments/run_sim.py` | `tab/sim.tex` |
@@ -36,6 +36,11 @@ from this directory whether or not `gbc` is installed.
 | Training-budget selection | `experiments/run_epochsel.py` | `results/epoch_selection.{csv,json}` |
 
 `make_figures.py` reads `results/` and must run after `run_scale.py`.
+
+Two scripts in `experiments/` are diagnostics rather than table drivers, kept
+because they are the evidence behind claims in the lab notebook:
+`attr_probe.py` measures where a body-only predictive network saturates, and
+`tail_val.py` checks that the GPD tail head recovers the far tail it could not.
 
 Every value printed in the paper is appended to `results/numbers.txt` as a
 tab-separated `value / driver / identifier / date` line, so a number in a table
@@ -53,7 +58,7 @@ re-contacting NOAA:
 | `conus_prcp_maxima.csv` | annual daily-precipitation maxima, 110 CONUS stations |
 | `conus_prcp_meta.csv` | station metadata for the precipitation set |
 | `conus_tmax_meta.csv` | latitude and longitude for the 112 temperature stations |
-| `hadcrut5_annual.csv` | HadCRUT5 global mean temperature anomaly, 1850–2025 |
+| `hadcrut5_annual.csv` | HadCRUT5 global mean temperature anomaly, 1850 to 2025 |
 
 The `experiments/fetch_*.py` scripts rebuild these from the GHCN-Daily access
 CSVs and the HadCRUT5 annual summary. A station-year is kept when it has at least
@@ -61,16 +66,22 @@ CSVs and the HadCRUT5 annual summary. A station-year is kept when it has at leas
 
 ## Compute
 
-Everything except the two SLURM jobs runs on a laptop in minutes. The two batch
-scripts target the Intel `hop` nodes of the GMU Hopper cluster:
+The published numbers were all produced on the Intel `hop` nodes of the GMU
+Hopper cluster. The drivers run unchanged on a laptop, but training a network is
+tens of minutes there, so the batch scripts are the intended path:
 
 ```bash
 sbatch experiments/timing.slurm      # wall-clock + MCMC diagnostics, 1 thread, exclusive node
-sbatch experiments/scale.slurm       # Table 4 and Figure 1; reads results/timing.json
-sbatch experiments/epochsel.slurm    # training-budget sweep, 16 threads
+sbatch experiments/suite.slurm       # Tables 1, 2, 3, 4, 5 and Figure 1, drivers run in sequence
+sbatch experiments/sim.slurm         # Table 6
+sbatch experiments/epochsel.slurm    # training-budget sweep, 16 worker processes
 ```
 
-Run `timing.slurm` before `scale.slurm`: `run_scale.py` publishes the recorded
+`suite.slurm` runs its drivers sequentially on purpose: they all append to the
+same `results/numbers.txt`, and concurrent drivers race on it. It takes the
+driver list from `$DRIVERS`, so a single table can be rebuilt without the rest.
+
+Run `timing.slurm` before `suite.slurm`: `run_scale.py` publishes the recorded
 benchmark timings when `results/timing.json` is present and warns loudly when it
 is not, so a laptop rebuild cannot quietly substitute a laptop's wall-clock.
 

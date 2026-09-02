@@ -4,9 +4,9 @@
 #SBATCH --constraint=intel
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
-#SBATCH --time=08:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+#SBATCH --time=04:00:00      # 18 cells measured 1h20m process-parallel; 3x headroom
 #SBATCH --output=slurm-epochsel-%j.out
 #SBATCH --error=slurm-epochsel-%j.out
 
