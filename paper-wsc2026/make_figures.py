@@ -295,8 +295,8 @@ def fig_scale_panels(L):
         a1.set_xlabel("longitude"); a1.set_ylabel("latitude"); a1.set_aspect(1.25)
         a1.set_title(f"100-year levels, {len(m)} stations")
 
-        a2.loglog(n, mcmc, color=RED, lw=2.0, label="MCMC")
-        a2.loglog(n, gbc, color=BLUE, lw=2.0, label="GBC (amortized)")
+        a2.loglog(n, mcmc, color=RED, lw=2.0, ls="--", label="MCMC, one chain")
+        a2.loglog(n, gbc, color=BLUE, lw=2.0, ls="-", label="GBC (amortized)")
         # The two rules stop just above the GBC curve rather than spanning the
         # full height: they mark x positions, they only have to reach the curves
         # they mark, and a full-height rule ruled straight through the legend.

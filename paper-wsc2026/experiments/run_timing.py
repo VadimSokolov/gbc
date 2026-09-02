@@ -205,8 +205,9 @@ def main():
     print(f"  median bulk ESS for z100         : {med_ess_z:.0f}")
     print(f"  stations with any Rhat > 1.01    : {n_unconverged} / {len(sub)}")
 
-    # cost per effective draw: the fair unit for MCMC-vs-forward-pass
-    s_per_eff = mcmc_s / med_ess_z
+    # The ESS is pooled across four chains, so its serial compute cost is four
+    # times the separately measured one-chain time.
+    s_per_eff = N_CHAINS * mcmc_s / med_ess_z
     print(f"  MCMC cost per effective z100 draw: {1000*s_per_eff:.4f} ms")
 
     # ── 6. the amortization arithmetic ───────────────────────────────────────

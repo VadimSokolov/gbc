@@ -7,8 +7,9 @@ of its posterior survivor function:
 
 where S(t | y) = P(X > t | y) = 1 - F(t | y).  This module converts IQN
 quantile predictions into survivor function estimates and computes tail
-functionals (return levels, exceedance probabilities, Expected Shortfall)
-directly from the estimated survivor curve.
+functionals from the estimated survivor curve. Functions that call
+``sample_iqn`` inherit its fixed 0.005 to 0.995 quantile grid and therefore
+describe a truncated grid approximation, not the full far-tail distribution.
 
 These tools work with *any* trained IQN — they are not specific to EVT.
 
@@ -32,7 +33,7 @@ def survivor_curve(
     t_grid: np.ndarray,
     B: int = 500,
 ) -> np.ndarray:
-    r"""Estimate the survivor function S(t | x) on a grid.
+    r"""Estimate the truncated-grid survivor function S(t | x) on a grid.
 
     For each test point x_i, the survivor function at level t is
 
@@ -68,7 +69,7 @@ def posterior_mean(
     ys: float,
     B: int = 500,
 ) -> np.ndarray:
-    r"""Posterior mean via the survivor integral identity.
+    r"""Interior-grid approximation to the posterior mean.
 
     .. math::
         E[X | y] = \int_0^1 (1 - \tau)\, dQ(\tau | y)
@@ -136,7 +137,11 @@ def exceedance_prob(
     threshold: float,
     B: int = 500,
 ) -> np.ndarray:
-    r"""Exceedance probability P(Y > threshold | x).
+    r"""Truncated-grid exceedance fraction for P(Y > threshold | x).
+
+    This is not a full predictive probability when either omitted 0.005 tail
+    contributes. Increase ``B`` only refines the fixed interior interval; it
+    does not remove that truncation.
 
     Parameters
     ----------

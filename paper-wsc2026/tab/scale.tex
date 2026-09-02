@@ -3,11 +3,11 @@
 \toprule
 112 CONUS stations & GBC-QNN (amortised) & per-station MCMC \\
 \midrule
-Procedure & one network, 112 forward passes & 25 stations $\times$ 4 chains \\
-Marginal cost per station & 1.05\,ms & 375\,ms ($356\times$) \\
+Procedure & one network, 112 forward passes & one timed chain/station (25 stations) \\
+Marginal cost per station & 1.05\,ms & 375\,ms per chain ($356\times$) \\
 One-off training & 1664\,s (return-level net) & n/a \\
-LOYO coverage, GBC (nom.\ 0.90) & \multicolumn{2}{c}{0.86 over 8198 station-years} \\
-LOYO CRPS, GBC ($^\circ$C) & \multicolumn{2}{c}{0.98} \\
+LOYO coverage, GBC grid interval & \multicolumn{2}{c}{0.86 over 8198 station-years} \\
+LOYO grid CRPS, GBC ($^\circ$C) & \multicolumn{2}{c}{0.98} \\
 $z_{100}$ agreement & \multicolumn{2}{c}{$r=0.99$ vs MLE (112), $r=1.00$ vs MCMC (25)} \\
 \bottomrule
 \end{tabular}

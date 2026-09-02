@@ -48,7 +48,8 @@ def composite_loss(
     """Three-term IQN loss (Ch 5 §sec-iqn-loss).
 
     The three terms are:
-      1. L1 anchor on the conditional mean (col 0 of f), which stabilises training.
+      1. L1 location anchor (col 0 of f), which stabilises training. Its
+         population target under absolute error is a conditional median.
       2. Monotonicity penalty on quantile crossing.
       3. Pinball loss on the quantile estimate (col 1 of f).
 
@@ -68,7 +69,7 @@ def composite_loss(
     Parameters
     ----------
     y : (n,) targets.
-    f : (n, 2) model output; col 0 = mean estimate, col 1 = quantile estimate.
+    f : (n, 2) model output; col 0 = location anchor, col 1 = quantile estimate.
     tau : quantile level at which ``f`` was evaluated; scores the pinball term.
     w : weights for (L1 anchor, monotonicity, pinball).
     f_other : (n, 2) model output at ``tau_other``; enables term 2.
@@ -80,7 +81,7 @@ def composite_loss(
     Scalar loss.
     """
     e = y.view(-1, 1) - f
-    # L1 anchor on conditional mean
+    # L1 location anchor; absolute error targets a conditional median.
     loss = w[0] * torch.mean(torch.abs(e[:, 0]))
     # Monotonicity penalty: a genuine crossing between two quantile levels
     if f_other is not None:

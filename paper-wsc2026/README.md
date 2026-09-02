@@ -33,7 +33,7 @@ from this directory whether or not `gbc` is installed.
 | Table 6 (simulation study) | `experiments/run_sim.py` | `tab/sim.tex` |
 | Figure 1 (map + cost curves) | `make_figures.py` | `fig/scale_panels.pdf` |
 | Wall-clock and MCMC diagnostics | `experiments/run_timing.py` | `results/timing.json`, `results/mcmc_diagnostics.csv` |
-| Training-budget selection | `experiments/run_epochsel.py` | `results/epoch_selection.{csv,json}` |
+| Training-budget sensitivity | `experiments/run_epochsel.py` | `results/epoch_selection.{csv,json}` |
 
 `make_figures.py` reads `results/` and must run after `run_scale.py`.
 
@@ -66,15 +66,23 @@ CSVs and the HadCRUT5 annual summary. A station-year is kept when it has at leas
 
 ## Compute
 
-The published numbers were all produced on the Intel `hop` nodes of the GMU
-Hopper cluster. The drivers run unchanged on a laptop, but training a network is
-tens of minutes there, so the batch scripts are the intended path:
+The published timing benchmark, simulation and budget-sensitivity run were
+produced on Intel `hop` nodes of the GMU Hopper cluster. Tables 1 through 5 used
+the local CPU runs recorded in `experiments/empirical.md`; Table 4 imports the
+pinned Hopper timing JSON. The drivers run unchanged on either machine. To
+regenerate the complete artifact set on Hopper with one command:
+
+```bash
+bash experiments/reproduce_all.sh
+```
+
+The wrapper waits for these four jobs in sequence:
 
 ```bash
 sbatch experiments/timing.slurm      # wall-clock + MCMC diagnostics, 1 thread, exclusive node
 sbatch experiments/suite.slurm       # Tables 1, 2, 3, 4, 5 and Figure 1, drivers run in sequence
 sbatch experiments/sim.slurm         # Table 6
-sbatch experiments/epochsel.slurm    # training-budget sweep, 16 worker processes
+sbatch experiments/epochsel.slurm    # training-budget sensitivity, 8 worker processes
 ```
 
 `suite.slurm` runs its drivers sequentially on purpose: they all append to the

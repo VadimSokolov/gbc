@@ -91,8 +91,12 @@ Why it was needed: the body-only Seattle predictive net saturated at 40.38 degC,
 below both the detrended record maximum it was conditioned on (43.19) and the
 fitted GEV upper endpoint (45.13), so it could not emit a value that had already
 been observed. That was a network defect, not a short-tail artifact: the fitted
-GEV puts P(>= 42.2) = 8.4e-3. With the head, max draw 45.21 and
-P(>= 42.2) = 1.62e-2. This is what moved the tab:attr GBC row from 1/211 to 1/87.
+GEV puts P(>= 42.2) = 8.4e-3. With the head, a fine-grid probe reached 45.21
+degC and placed the crossing near P(>= 42.2) = 1.62e-2. The production driver
+instead counted equal weights on the truncated grid [0.005, 0.995], giving
+0.0115 and 1/87. That count omits the fixed upper-tail mass and is not a full
+predictive probability. The GBC row is therefore withdrawn from tab:attr rather
+than repaired without a complete rerun of its record bootstrap.
 
 Residual non-monotonicity after the loss fix, measured on a trained body-only
 net over a tau grid, is -0.115 degC worst-case (the penalty discourages
@@ -146,9 +150,9 @@ nobody can check:
 | Hill | `hill` | baseline tail index |
 | Bayes GEV MCMC | `gev_mcmc` | RW-Metropolis, priors mu~N(ref,5^2), log sig~N(ref,.5^2), xi~N(0,.3^2)[-1,2] (rejection, genuinely truncated) |
 | GBC-QNN | `train_functional_iqn` + `gbc_return_level_posterior`; `gbc_crps_coverage_loyo` | ours |
-| GBC + Horseshoe | `simulate_hierarchical_training_data` + `horseshoe_posterior` | ours (spatial) |
+| Horseshoe-pooled GEV | `horseshoe_posterior` + fixed-shape GEV bootstrap | spatial comparator |
 
-### 1.1 GBC-QNN hyperparameters (validated)
+### 1.1 GBC-QNN hyperparameters and retrospective sensitivity
 IQN: hdim/nh/lr per `gbc.iqn` defaults, i.e. full-batch Adam, lr 1e-3, weight decay 1e-4, cosine
 annealing with T_max set to the budget. Predictive IQN trains on `simulate_gev_training_data`
 (target = fresh GEV draw); functional IQN targets `z_N(theta)`. n_sim=20000-40000; the amortized
@@ -161,13 +165,12 @@ The justification that stood here was leaky. It read:
 > epochs>=1500 calibrates (predictive q[.05,.5,.95] match empirical within 0.5 degC).
 
 Both halves of that check are computed against the *observed* station record, so the budget was
-tuned, however weakly, on the data the paper then evaluates on. Replaced by a rule that lives
+tuned, however weakly, on the data the paper then evaluates on. A later sensitivity analysis lives
 entirely inside the simulator: 60000 prior-predictive draws split 75/25, six candidate budgets x
 3 seeds, each cell trained by the *deployed* `gbc.iqn.train_iqn` (not a lookalike loop) and scored
 by mean pinball loss over tau in {.05,.1,.25,.5,.75,.9,.95} on the held-out simulated quarter.
-A GBC network is amortized and never sees a station during training, so a selection touching only
-the simulator leaves the station evaluation untouched by construction: the outer loop over
-stations is nested outside a selection that cannot see it.
+This sweep covers only the return-level target. It neither prospectively selects the deployed
+budget, which remains 2000, nor validates the predictive network used for coverage and CRPS.
 
 Values below are the 2026-09-01 rerun under the corrected loss (0.1), which lowers every cell:
 the old penalty was active at the wrong quantile, so the loss it reported was not the loss the
@@ -188,9 +191,9 @@ max 0.416 degC, r=0.9997, so neither tab:scale nor fig:scale turns on the budget
 collapses as the budget grows (sd 0.0039 at 250 down to 0.00014 at 4000), so the sweep is ranking
 signal, not noise.
 
-The paper had described 2000 as the budget the rule chose and then said the rule chose 4000. It
-now says what happened: 2000 was fixed first, the selection run prefers 4000, and the deployed
-network is reported because the gap does not reach the published quantity. Ledger rows
+The paper now says what happened: 2000 was used in the reported runs after an observed-data check,
+the later simulator-only return-level sweep prefers 4000, and the deployed network is retained
+because the sensitivity check changes the reported levels little. Ledger rows
 `epochsel:{deployed_epochs,selected_epochs,deployed_excess_pct,z100_median_abs_diff,z100_max_abs_diff}`.
 
 **Isolation note.** This job ran in a separate tree (`~/gbc-evt-epochsel`) with its own empty
@@ -210,12 +213,12 @@ established, that the sweep is machine-independent at this precision, is not re-
 |--------------|-----------|--------|---------|
 | Table 1 `tab:rl` | SEA 6-method return levels, LOYO CRPS/coverage | `run_pnw.py` | local CPU |
 | Table 2 `tab:spatial` | 5-station xi MLE vs horseshoe, kappa, trends | `run_pnw.py` | local CPU |
-| Table 3 `tab:attr` | heat-dome exceedance probabilities, 4 models | `run_attr.py` | local CPU |
+| Table 3 `tab:attr` | heat-dome exceedance probabilities, 3 parametric fits | `run_attr.py` | local CPU |
 | Table 4 `tab:scale`, Fig 1 `fig:scale` | 112-station amortized z100, LOYO calibration, agreement | `run_scale.py` then `make_figures.py` | local CPU (statistics); **Hopper** Intel node (timings) |
 | Table 5 `tab:heavytail` | 103-station precipitation, 25-yr subsamples, clustered bootstrap | `run_heavytail.py` | local CPU |
 | Table 6 `tab:sim` | sim study: R=300 reps, GEV(35,3,xi), n=70, three tail regimes | `run_sim.py` (`sim.slurm`) | **Hopper** Intel node, single process (not an array) |
 | Wall-clock + MCMC diagnostics | pinned single-thread timings, 4 chains/station, Rhat and ESS | `run_timing.py` (`timing.slurm`) | **Hopper** Intel hop node, exclusive, 1 thread |
-| Training-budget selection | validation pinball on held-out simulated draws, 6 budgets x 3 seeds | `run_epochsel.py` (`epochsel.slurm`) | local CPU, 8 worker processes; cross-checked on **Hopper** Intel node |
+| Training-budget sensitivity | validation pinball on held-out simulated draws, 6 budgets x 3 seeds | `run_epochsel.py` (`epochsel.slurm`) | **Hopper** Intel node, 8 worker processes |
 
 Wall-clock is a property of a machine, so the published timings come only from
 `run_timing.py` on the recorded benchmark node. `run_scale.py` reads
@@ -235,19 +238,19 @@ All values from `results/numbers.txt` (keys `rl:*`) and `tab/rl.tex`.
 | Bayes GEV MCMC | 40.7 | 40.7 | 2.6 | 0.92 | 1.48 |
 | Hill | 39.9 | 39.9 | n/a | n/a | n/a |
 | **GBC-QNN (ours)** | 38.5 | 41.9 | 4.9 | 0.88 | 1.47 |
-| **GBC + Horseshoe** | 38.3 | 42.2 | 1.9 | n/a | n/a |
+| **Horseshoe-pooled GEV** | 38.3 | 42.2 | 1.9 | n/a | n/a |
 
 Method notes (honest design, propagated to the caption): stationary methods use the same level both
 years; NS methods (NS GEV MLE, GBC) shift with the HadCRUT5 covariate (T_1950=-0.227, T_2023=+1.100).
 GBC-QNN return level = detrend the maxima to the target climate via the estimated trend, then apply
 the stationary GBC functional (`train_functional_iqn`, body only); CRPS/coverage from
-`gbc_crps_coverage_loyo`, whose predictive net carries the tail head. GBC+Horseshoe propagates the
+`gbc_crps_coverage_loyo`, whose predictive net carries the tail head. Horseshoe-pooled GEV propagates the
 spatially-pooled xi posterior (tab:spatial) with a data bootstrap for (mu,sigma), so it never
 evaluates the predictive network and gets no Coverage/CRPS entry.
 Hill RL via the Weissman high-quantile estimator (k=floor(n/4)); CI/coverage n/a.
 
 Changes from the pre-fix (2026-06-17) run: GBC-QNN 38.3 -> 38.5, 42.0 -> 41.9, CI 4.8 -> 4.9,
-coverage 0.86 -> 0.88, CRPS 1.49 -> 1.47; GBC+Horseshoe CI 2.1 -> 1.9. The coverage column moved
+coverage 0.86 -> 0.88, CRPS 1.49 -> 1.47; the horseshoe-pooled GEV CI moved 2.1 -> 1.9. The coverage column moved
 because the old "90%" intervals were really 92.5% (see 0.1). The horseshoe interval now coincides
 with the stationary MLE delta interval (1.9) rather than sitting near the Bayes MCMC interval
 (2.6); the earlier note claiming the latter comparison is withdrawn.
@@ -280,7 +283,7 @@ The paper had said 0.42-0.77, left over from before the 0.1 shrinkage fix; see 0
    (PDT) degC.
 2. **The horseshoe pools heavily**, which reverses the pre-fix reading. With the corrected global
    auxiliary, deviations from the group mean shrink 64-80% and the shape intervals narrow to
-   0.42-0.77 of the single-station width (single-station 90% widths: SEA 0.143, PDX 0.107,
+   0.46-0.82 of the single-station width (single-station 90% widths: SEA 0.143, PDX 0.107,
    GEG 0.149, EUG 0.143, PDT 0.228). The **withdrawn** claim was "the horseshoe shrinks little
    (kappa ~0.5-0.6) because the stations genuinely agree, which is itself the finding": that
    was an artifact of the `shrinkage.py` rate bug, not a property of the data.
@@ -288,20 +291,28 @@ The paper had said 0.42-0.77, left over from before the 0.1 shrinkage fix; see 0
    and the widest posteriors: the horseshoe's heavy-tailed local scale letting an outlier retain
    its own uncertainty. This is the behaviour the prior is chosen for and it was invisible before
    the fix.
-4. **The 2021 heat dome (SEA 42.2 degC)** sits at 1/87 under the 2023 climate, against beyond
-   1/10^4 under the 1950 climate; see the `attr:` rows of `results/numbers.txt`. The GBC interval
-   now resamples the conditioning record (0.2) rather than the deterministic quantile grid, and is
-   [38, 53800] years. Every return-period interval in the table therefore spans at least three
-   orders of magnitude: the point estimates separate the two climates and the intervals do not.
-   The paper says so; the earlier claim that the GBC row "avoids that instability" is withdrawn,
-   in the prose and in the generated table footer.
+4. **The 2021 heat dome (SEA 42.2 degC)** lies beyond 1/10^4 under the fitted 1950
+   NS-GEV climate and near 1/338 under the fitted 2023 climate; see the parametric
+   `attr:` rows of `results/numbers.txt`. Both intervals are unbounded above. The
+   GBC row is withdrawn because its bounded deterministic grid did not estimate
+   a full predictive probability.
 
 ### Status / next
-- [x] Data + methods (gbc v0.6.0); every table traced to `results/numbers.txt` + `tab/*.tex`.
+- [x] Data + methods prepared for gbc v0.6.0; the release is not yet tagged.
 - [x] Three estimator defects fixed, GPD tail head implemented, 14 regression tests (0.1).
-- [x] All six tables rerun on Hopper Intel nodes after the fixes (jobs 9510715, 9510716,
-      9510775, 9511463); figures regenerated from the ledger.
+- [x] Tables regenerated on the local or Hopper environments recorded in the experiment map;
+      timings, simulation and budget sensitivity use Hopper.
 - [x] Manuscript prose rewritten from the rerun ledger; audit and WSC checks pass at 12 pages.
 - [x] `run_epochsel.py` rerun under the corrected loss (job 9513422) -> 1.2 refreshed.
-- [ ] Known gap, not blocking WSC: no non-neural baselines beyond MLE/MCMC/Hill (no L-moments
+- [ ] Remaining comparator gap: no non-neural baselines beyond MLE/MCMC/Hill (no L-moments
       or PWM, no profile likelihood, no Bayesian GEV under the amortized net's own shape prior).
+
+## Drafting sessions
+
+- 2026-09-02: revised the abstract, introduction, GBC-QNN method, experiments and
+  discussion under the AI-drafting pre-prompt. The manuscript AI-writing scan
+  moved from 2 hits before the pass to 0 after cleanup. No citations were added;
+  the existing neural-EVT references were repositioned and characterized more
+  precisely. Manual rewrites withdrew the GBC heat-dome row, separated
+  predictive from functional return levels, and made the timing and budget
+  limitations explicit.

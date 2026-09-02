@@ -224,13 +224,13 @@ def gbc_return_level_posterior(trained, x, alpha=0.10):
 
 
 def gbc_predictive_samples(trained, x, B=2000):
-    """Posterior-predictive samples for a new block maximum from a predictive IQN."""
+    """Deterministic predictive quantile grid for a new block maximum."""
     model, xm, xs, ym, ys = trained
     return sample_iqn(model, _feat(x), xm, xs, ym, ys, B=B).ravel()
 
 
 def gbc_crps_coverage_loyo(x, n_sim=20000, epochs=1500, seed=0, alpha=0.10, B=1000):
-    """Leave-one-year-out predictive CRPS and (1-alpha) coverage (train once, amortized)."""
+    """Leave-one-year-out grid CRPS and central grid-interval coverage."""
     x = np.asarray(x, float)
     model, xm, xs, ym, ys = train_predictive_iqn(x, n_sim=n_sim, epochs=epochs, seed=seed)
     crps_list, hits = [], 0

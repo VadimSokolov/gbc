@@ -20,7 +20,7 @@ cd gbc
 pip install -e .
 ```
 
-**Requirements:** Python ≥ 3.10, PyTorch ≥ 2.0, NumPy ≥ 2.0, SciPy ≥ 1.10,
+**Requirements:** Python ≥ 3.10, PyTorch ≥ 2.0, NumPy ≥ 1.24, SciPy ≥ 1.10,
 scikit-learn ≥ 1.2, matplotlib ≥ 3.7, pandas ≥ 2.0.
 
 ## Quick Start

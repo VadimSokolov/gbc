@@ -137,8 +137,8 @@ def fit_gev_fixed_xi(x, xi):
     return r.x[0], float(np.exp(r.x[1]))
 
 
-def gbc_hs_rl(x, T, T_star, mu1, xi_samples, alpha=0.10, B=400, seed=3):
-    """GBC + Horseshoe return level: bootstrap (mu,sigma) from the climate-shifted
+def horseshoe_pooled_rl(x, T, T_star, mu1, xi_samples, alpha=0.10, B=400, seed=3):
+    """Horseshoe-pooled GEV return level: bootstrap (mu,sigma) from the climate-shifted
     maxima while drawing the tail shape xi from the spatially-pooled horseshoe
     posterior (tighter than a single-station fit). Both sources of uncertainty
     propagate into the interval."""
@@ -248,20 +248,20 @@ def main():
     ledger(cc["coverage_se"], "rl:gbc:cov_se")
     rows["GBC-QNN (ours)"] = [g50[0], g23[0], g23[2] - g23[1], cc["coverage"], cc["crps"]]
 
-    # 6. GBC + Horseshoe: propagate the spatially-pooled xi posterior for SEA
+    # 6. Horseshoe-pooled GEV: propagate the spatial xi posterior for SEA
     sea_i = stations.index("SEA")
-    h50 = gbc_hs_rl(x, T, T1950, mu1_sea, hs_samples[:, sea_i])
-    h23 = gbc_hs_rl(x, T, T2023, mu1_sea, hs_samples[:, sea_i])
-    # gbc_hs_rl is a nonparametric bootstrap of the climate-shifted maxima with xi
+    h50 = horseshoe_pooled_rl(x, T, T1950, mu1_sea, hs_samples[:, sea_i])
+    h23 = horseshoe_pooled_rl(x, T, T2023, mu1_sea, hs_samples[:, sea_i])
+    # horseshoe_pooled_rl bootstraps the climate-shifted maxima with xi
     # drawn from the pooled horseshoe posterior. It never evaluates the predictive
     # network and yields an interval rather than a predictive distribution, so LOYO
     # coverage/CRPS are undefined for it. Leave them blank.
-    rows["GBC + Horseshoe"] = [h50[0], h23[0], h23[2] - h23[1], None, None]
+    rows["Horseshoe-pooled GEV"] = [h50[0], h23[0], h23[2] - h23[1], None, None]
 
     # ---- emit tab:rl ----
     print("\n=== tab:rl (Seattle 100-yr return levels) ===")
     order = ["Stationary GEV MLE", "NS GEV MLE", "Bayes GEV MCMC", "Hill Estimator",
-             "GBC-QNN (ours)", "GBC + Horseshoe"]
+             "GBC-QNN (ours)", "Horseshoe-pooled GEV"]
     lines = []
     for m in order:
         rl50, rl23, ciw, cvg, crps = rows[m]

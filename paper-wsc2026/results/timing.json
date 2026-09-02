@@ -50,5 +50,5 @@
   "mcmc_min_ess": 260.40483221129784,
   "mcmc_median_ess_z100": 1072.5646314668595,
   "mcmc_stations_rhat_above_1p01": 3,
-  "mcmc_ms_per_effective_z100_draw": 0.3494429415775947
+  "mcmc_ms_per_effective_z100_draw": 1.3977717663103787
 }

@@ -3,10 +3,12 @@ level estimator under GBC-QNN vs GEV maximum likelihood, across tail regimes.
 
 GBC is amortized: ONE network is trained on a standardised prior-predictive
 regime that is independent of every evaluated scenario, then applied to each
-replicate by a forward pass. The network never sees the true (mu, sigma, xi) of
-any regime, so it enters with no information the MLE lacks. MLE refits each
-replicate. Monte Carlo standard errors are reported for every cell, and the
-RMSE difference is tested paired across replicates.
+replicate by a forward pass. The network never sees a regime's true
+(mu, sigma, xi), but it does carry the standardized training prior that the MLE
+lacks. The comparison therefore measures prior regularization and amortized
+inference together. MLE refits each replicate. Monte Carlo standard errors are
+reported for every cell, and the RMSE difference is tested paired across
+replicates.
 """
 import os
 import sys

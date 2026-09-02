@@ -56,7 +56,7 @@ class IQN(nn.Module):
         x   -> Linear(xdim, hdim) -> ReLU -> h_x
         h = h_x * h_tau  (element-wise, §sec-iqn-architecture)
         h -> Linear(hdim, hdim) -> ReLU -> Linear(hdim, 64) -> Tanh
-          -> Linear(64, 2)   # col 0 = mean anchor, col 1 = quantile
+          -> Linear(64, 2)   # col 0 = location anchor, col 1 = quantile
 
     The 2-output head supports the three-term composite loss (§sec-iqn-loss):
     col 0 is used by the L1 anchor term; col 1 by the pinball term.
@@ -302,10 +302,10 @@ def sample_iqn(
 
     These are NOT random draws, despite the name: tau runs on an evenly spaced
     grid from 0.005 to 0.995, so two calls with the same inputs return the same
-    numbers.  The grid is a quadrature rule for the predictive distribution, and
-    it is a good one: means, quantiles, exceedance frequencies and CRPS computed
-    from it are accurate to O(1/B) with none of the Monte Carlo noise that B
-    random draws would carry.
+    numbers.  Equal-weight summaries describe the quantile range on this grid,
+    not the full predictive distribution: each omitted tail has mass 0.005, so
+    the resulting truncation error does not vanish as B grows.  In particular,
+    do not use a raw exceedance fraction for a full far-tail probability.
 
     That is also the trap.  **Do not bootstrap the returned values.**  Resampling
     them measures the sampling variability of B independent draws, and there are
