@@ -81,3 +81,55 @@ class TestAmortisedShapePrior:
         ref = truncnorm(self.LO / self.SD, self.HI / self.SD, 0.0, self.SD)
         ks = pytest.importorskip("scipy.stats").kstest(xi, ref.cdf)
         assert ks.pvalue > 0.01, f"KS p = {ks.pvalue:.4f}, D = {ks.statistic:.4f}"
+
+
+class TestDriversDoNotReimplementTheEstimators:
+    """No driver may define its own copy of an estimator the package exports.
+
+    `methods.py` and `gbc_qnn.py` were each a full second copy, and each had
+    already diverged: `methods.gev_mcmc` dropped the `-log(sigma)` Jacobian, and
+    `gbc_qnn.train_predictive` called `train_iqn` without `tail=True`, so it
+    built a predictive network with no GPD tail head while the paper states the
+    splice.  Nothing imported either file, so no published number moved, but both
+    shipped in the reproduction bundle as a second and wrong answer.  Identity,
+    not equality, is the property that makes a re-divergence impossible.
+    """
+
+    ALIASES = {
+        "gbc_qnn": [
+            ("priors_from_data", "gbc_priors_from_data"),
+            ("train_predictive", "train_predictive_iqn"),
+            ("train_functional", "train_functional_iqn"),
+            ("return_level_posterior", "gbc_return_level_posterior"),
+            ("predictive_samples", "gbc_predictive_samples"),
+            ("crps_coverage_loyo", "gbc_crps_coverage_loyo"),
+        ],
+        "methods": [
+            ("gev_mcmc", "gev_mcmc"),
+            ("fit_stationary_gev", "fit_stationary_gev"),
+            ("fit_ns_gev", "fit_ns_gev"),
+            ("hill", "hill"),
+            ("return_level_ci_delta", "return_level_ci_delta"),
+        ],
+    }
+
+    @pytest.mark.parametrize("driver", sorted(ALIASES))
+    def test_is_the_package_function_itself(self, driver):
+        from gbc import evt_inference
+
+        mod = _load(driver)
+        for local, packaged in self.ALIASES[driver]:
+            assert hasattr(mod, local), f"{driver}.{local} disappeared"
+            assert getattr(mod, local) is getattr(evt_inference, packaged), (
+                f"{driver}.{local} is not gbc.evt_inference.{packaged}; a driver "
+                f"has grown its own copy of an estimator again")
+
+    def test_predictive_training_keeps_the_tail_head(self):
+        """The splice is a default, so a re-export cannot silently lose it."""
+        import inspect
+
+        from gbc import evt_inference
+
+        sig = inspect.signature(evt_inference.train_predictive_iqn)
+        assert sig.parameters["tail"].default is True
+        assert sig.parameters["tau0"].default == 0.9
