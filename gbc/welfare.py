@@ -34,6 +34,11 @@ Different h give different welfare criteria:
 """
 
 import numpy as np
+
+# np.trapz was removed in numpy 2 and np.trapezoid does not exist in
+# numpy 1.x.  The published runs used numpy 1.24.4, so the package has to
+# import and run under both majors for the declared floor to be truthful.
+_trapz = getattr(np, "trapezoid", None) or np.trapz
 from typing import Callable
 
 
@@ -52,7 +57,7 @@ def meu(quantile_values: np.ndarray, quantile_levels: np.ndarray) -> float:
     -------
     Scalar expected value.
     """
-    return float(np.trapezoid(quantile_values, quantile_levels))
+    return float(_trapz(quantile_values, quantile_levels))
 
 
 def welfare_change(
@@ -109,7 +114,7 @@ def yaari_weighted(
     """
     h_vals = np.array([distortion(z) for z in quantile_levels])
     h_prime = np.gradient(h_vals, quantile_levels)
-    return float(np.trapezoid(quantile_values * h_prime, quantile_levels))
+    return float(_trapz(quantile_values * h_prime, quantile_levels))
 
 
 def individual_welfare(
@@ -130,7 +135,7 @@ def individual_welfare(
     (n,) welfare changes.
     """
     return np.array([
-        np.trapezoid(qte_matrix[i], quantile_levels)
+        _trapz(qte_matrix[i], quantile_levels)
         for i in range(qte_matrix.shape[0])
     ])
 
@@ -197,7 +202,7 @@ def portfolio_meu(
 
 
 def distortion_identity(z: float) -> float:
-    """No distortion — standard expected value."""
+    """No distortion: standard expected value."""
     return z
 
 

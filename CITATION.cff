@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "gbc: Generative Bayesian Computation"
+abstract: >-
+  Python package for Generative Bayesian Computation: Bayesian inference by
+  training an Implicit Quantile Network on prior-predictive simulations, so
+  posterior quantiles for an observed dataset come from a single forward pass
+  rather than from a Markov chain. Includes the extreme-value modules and the
+  reproduction bundle for the Winter Simulation Conference 2026 paper.
+type: software
+license: MIT
+version: 0.6.0
+repository-code: "https://github.com/VadimSokolov/gbc"
+authors:
+  - family-names: Polson
+    given-names: "Nicholas G."
+    affiliation: "Booth School of Business, University of Chicago"
+  - family-names: Sokolov
+    given-names: Vadim
+    affiliation: "George Mason University"
+    email: vsokolov@gmu.edu
+keywords:
+  - generative Bayesian computation
+  - simulation-based inference
+  - quantile neural network
+  - amortized inference
+  - extreme value theory

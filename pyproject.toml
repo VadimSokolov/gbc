@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gbc"
-version = "0.2.0"
-description = "Generative Bayesian Computation — Python package for Polson & Sokolov (2026)"
+version = "0.6.0"
+description = "Generative Bayesian Computation: Python package for Polson & Sokolov (2026)"
 authors = [
     {name = "Nicholas Polson"},
     {name = "Vadim Sokolov"},
@@ -14,7 +14,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.0",
-    "numpy>=2.0",
+    "numpy>=1.24",   # the published runs used 1.24.4; nothing here needs numpy 2
     "scipy>=1.10",
     "scikit-learn>=1.2",
     "matplotlib>=3.7",
