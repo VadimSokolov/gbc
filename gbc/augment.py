@@ -62,10 +62,31 @@ class BoundaryClassifier(nn.Module):
             layers += [nn.Linear(hdim, hdim), nn.ReLU()]
         layers.append(nn.Linear(hdim, 1))
         self.net = nn.Sequential(*layers)
+        # Input standardisation lives inside forward, not in the training loop,
+        # so that every caller gets the transform the classifier was fitted
+        # with: augment_features, a reloaded state_dict, anything downstream.
+        # Identity until fit_input_scaler runs, so a directly constructed
+        # classifier behaves exactly as it did before.
+        self.register_buffer("x_mean", torch.zeros(xdim))
+        self.register_buffer("x_std", torch.ones(xdim))
+
+    def fit_input_scaler(self, x: torch.Tensor) -> None:
+        """Set the standardisation buffers from training inputs.
+
+        Without this the raw feature scale reaches the first Linear directly.
+        A column measured in units of order 1e13 drives the pre-activations to
+        order 1e12, saturates BCEWithLogitsLoss, and the classifier returns a
+        constant probability for every input.
+        """
+        self.x_mean.copy_(x.mean(0))
+        std = x.std(0, unbiased=False)
+        # A constant column has zero spread. Leave it at 1 rather than
+        # dividing by ~0 and manufacturing an enormous feature.
+        self.x_std.copy_(torch.where(std > 1e-12, std, torch.ones_like(std)))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Return logits (pre-sigmoid)."""
-        return self.net(x)
+        return self.net((x - self.x_mean) / self.x_std)
 
 
 def train_classifier(
@@ -81,12 +102,13 @@ def train_classifier(
 
     Parameters
     ----------
-    X : (n, d) inputs.
+    X : (n, d) inputs. Standardised internally, so unscaled columns are fine.
     labels : (n,) binary labels from em_labels.
 
     Returns
     -------
-    Trained classifier in eval mode.
+    Trained classifier in eval mode, carrying the input scaler it was fitted
+    with.
     """
     torch.manual_seed(seed)
     xdim = X.shape[1]
@@ -94,6 +116,7 @@ def train_classifier(
     y_t = torch.tensor(labels, dtype=torch.float32)
 
     model = BoundaryClassifier(xdim, hdim, nlayers)
+    model.fit_input_scaler(X_t)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
     criterion = nn.BCEWithLogitsLoss()

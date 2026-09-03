@@ -65,6 +65,80 @@ class TestBoundaryClassifier:
         assert np.all(probs >= 0) and np.all(probs <= 1)
 
 
+class TestUnscaledInputs:
+    """A huge uninformative column used to destroy the classifier.
+
+    train_classifier feeds X straight into an nn.Linear. A column measured in
+    units of order 1e13 next to an informative column of ordinary scale drives
+    the pre-activations to order 1e12, so BCEWithLogitsLoss is dominated by the
+    large column and the informative one is invisible. Measured before the
+    input scaler moved inside the module: accuracy 0.49 against 0.998, class
+    separation -0.02 against +0.93, and final loss 1.3e9 against 0.04.
+
+    Note the failure needs a *mixture* of scales. A uniformly huge but linearly
+    separable X saturates toward the correct answer and looks fine.
+    """
+
+    @staticmethod
+    def _mixed_scales(scale=1e13, n=400, seed=0):
+        rng = np.random.default_rng(seed)
+        z = rng.normal(size=n)                       # informative, ordinary
+        labels = (z > 0).astype(np.float32)
+        noise = rng.normal(size=n) * scale           # uninformative, huge
+        return np.column_stack([z, noise]), labels
+
+    def test_separates_classes_despite_a_huge_column(self):
+        X, labels = self._mixed_scales()
+        clf = train_classifier(X, labels, epochs=300, hdim=32, nlayers=2, seed=0)
+        X_t = torch.tensor(X, dtype=torch.float32)
+        with torch.no_grad():
+            p = torch.sigmoid(clf(X_t)).numpy().ravel()
+        sep = p[labels == 1].mean() - p[labels == 0].mean()
+        assert sep > 0.5, f"classifier learned nothing, separation {sep:+.4f}"
+
+    def test_accuracy_is_not_chance(self):
+        X, labels = self._mixed_scales()
+        clf = train_classifier(X, labels, epochs=300, hdim=32, nlayers=2, seed=0)
+        X_t = torch.tensor(X, dtype=torch.float32)
+        with torch.no_grad():
+            p = torch.sigmoid(clf(X_t)).numpy().ravel()
+        acc = ((p > 0.5) == (labels > 0.5)).mean()
+        assert acc > 0.9, f"accuracy {acc:.3f} is at or near chance"
+
+    def test_scaler_is_applied_at_predict_time(self):
+        """augment_features must use the transform training fitted."""
+        X, labels = self._mixed_scales()
+        clf = train_classifier(X, labels, epochs=300, hdim=32, nlayers=2, seed=0)
+        assert torch.all(clf.x_std > 0)
+        X_aug = augment_features(X, clf)
+        appended = X_aug[:, -1]
+        sep = appended[labels == 1].mean() - appended[labels == 0].mean()
+        assert sep > 0.5, "augment_features did not apply the fitted scaler"
+
+    def test_constant_column_does_not_divide_by_zero(self):
+        rng = np.random.default_rng(1)
+        z = rng.normal(size=150)
+        X = np.column_stack([z, np.full(150, 7.0)])
+        labels = (z > 0).astype(np.float32)
+        clf = train_classifier(X, labels, epochs=50, hdim=16, nlayers=2, seed=0)
+        X_aug = augment_features(X, clf)
+        assert np.isfinite(X_aug).all()
+
+    def test_untrained_classifier_is_unchanged(self):
+        """Buffers default to identity, so direct construction still works."""
+        clf = BoundaryClassifier(3, hdim=8, nlayers=2)
+        assert torch.allclose(clf.x_mean, torch.zeros(3))
+        assert torch.allclose(clf.x_std, torch.ones(3))
+
+    def test_scaler_survives_a_state_dict_round_trip(self):
+        X, labels = self._mixed_scales()
+        clf = train_classifier(X, labels, epochs=50, hdim=16, nlayers=2, seed=0)
+        clone = BoundaryClassifier(X.shape[1], hdim=16, nlayers=2)
+        clone.load_state_dict(clf.state_dict())
+        assert torch.allclose(clone.x_mean, clf.x_mean)
+        assert torch.allclose(clone.x_std, clf.x_std)
+
+
 # ── Feature augmentation ───────────────────────────────────────
 
 class TestAugmentFeatures:
