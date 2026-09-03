@@ -73,12 +73,15 @@ from gbc.ssm import (
 )
 from gbc.abc import abc_mcmc, ABCResult, summary_rates_by_decile
 from gbc.testing import (
-    build_slab_marginal, cauchy_slab_marginal,
+    build_slab_marginal, cauchy_slab_marginal, gaussian_slab_marginal,
     estimate_sparsity, local_fdr, log_bayes_factor,
     tweedie_select, bh_reject, fdp_power,
     mog_score, tweedie_stat,
 )
-from gbc.plotting import screening_histogram
+try:
+    from gbc.plotting import screening_histogram
+except ImportError:
+    pass  # matplotlib not installed (e.g. headless HPC compute node); core IQN still usable
 
 __version__ = "0.2.0"
 __all__ = [
@@ -102,9 +105,8 @@ __all__ = [
     "bayesian_predictive_weights",
     "garman_klass_vol", "rogers_satchell_vol",
     "simulate_gbm", "simulate_sS_policy",
-    "build_slab_marginal", "cauchy_slab_marginal",
+    "build_slab_marginal", "cauchy_slab_marginal", "gaussian_slab_marginal",
     "estimate_sparsity", "local_fdr", "log_bayes_factor",
     "tweedie_select", "bh_reject", "fdp_power",
     "mog_score", "tweedie_stat",
-    "screening_histogram",
 ]

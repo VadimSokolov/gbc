@@ -86,6 +86,39 @@ def build_slab_marginal(
     )
 
 
+def gaussian_slab_marginal(tau: float = 3.0):
+    """Analytical m1(z) for a Normal(0, tau^2) slab prior.
+
+    For z | theta ~ N(theta, 1) and theta ~ N(0, tau^2), the slab marginal is
+
+        m1(z) = N(z; 0, 1 + tau^2)
+
+    which is available in closed form.  Returns a callable compatible with
+    all functions that accept an m1_interp argument.
+
+    Parameters
+    ----------
+    tau : float
+        Slab standard deviation.  Choose to match the expected signal scale;
+        e.g. tau=3 for signals near |theta| = 3.
+
+    Returns
+    -------
+    callable
+        m1(z) evaluator; accepts array input and returns array output.
+
+    Examples
+    --------
+    >>> m1 = gaussian_slab_marginal(tau=3.0)
+    >>> float(m1(3.0)) > float(m1(0.0))   # BF > 1 at z = 3
+    True
+    """
+    scale = np.sqrt(1.0 + tau ** 2)
+    def _m1(z):
+        return stats.norm.pdf(np.asarray(z, dtype=float), 0.0, scale)
+    return _m1
+
+
 def cauchy_slab_marginal(
     z_lo: float = -9.0, z_hi: float = 9.0, n_grid: int = 1801,
 ) -> interpolate.interp1d:
