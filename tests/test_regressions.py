@@ -115,29 +115,66 @@ class TestHorseshoeGlobalScale:
 
 
 class TestGPDTailHead:
-    """A body-only IQN saturates just past the levels it was trained on."""
+    """A body-only IQN saturates just past the levels it was trained on.
+
+    The controlled pair behind the tail head: same data, same capacity, ``tail``
+    the only difference. Both fit a network, so both are marked slow.
+
+    Each asserts the body fits *below* the splice before claiming anything about
+    what happens above it. Without that gate an underpowered network passes
+    test_body_only_saturates for the wrong reason, by learning nothing and
+    returning a flat line. Measured at hdim=64, n=1200: the body predicted 0.55
+    at tau=0.9 against a true 1.72, its tail head ran to 7.35 against a true
+    endpoint of 4.0, and both tests still went green.
+    """
+
+    MU, SIGMA, XI = 0.0, 1.0, -0.25              # short tail: finite endpoint
+    ENDPOINT = MU - SIGMA / XI                   # 4.0
+    TAUS = np.array([0.5, 0.9, 0.99, 0.999, 0.9999])
 
     def _fit(self, tail):
-        rng = np.random.default_rng(4)
-        mu, sigma, xi = 0.0, 1.0, -0.25          # short tail: finite endpoint
         from gbc.evt import gev_quantile
         from gbc.iqn import train_iqn, predict_iqn
+        rng = np.random.default_rng(4)
         n = 6000
         X = rng.standard_normal((n, 3))
-        y = np.array([gev_quantile(u, mu, sigma, xi) for u in rng.uniform(1e-4, 1 - 1e-4, n)])
-        m, xm, xs, ym, ys = train_iqn(X, y, epochs=900, seed=0, tail=tail, tau0=0.9)
-        taus = np.array([0.5, 0.9, 0.99, 0.999, 0.9999])
-        q = predict_iqn(m, X[:1], xm, xs, ym, ys, taus=taus).ravel()
-        return q, gev_quantile(0.9999, mu, sigma, xi)
+        y = np.array([gev_quantile(u, self.MU, self.SIGMA, self.XI)
+                      for u in rng.uniform(1e-4, 1 - 1e-4, n)])
+        # Mini-batched: 12 steps an epoch over n=6000 reaches the same body
+        # accuracy as 900 full-batch epochs (0.12 abs err at tau=0.9) in a fifth
+        # of the time. Both n and hidden width have to stay put; at n=3000 the
+        # tail head overshoots the finite endpoint.
+        m, xm, xs, ym, ys = train_iqn(X, y, epochs=120, batch_size=512,
+                                      seed=0, tail=tail, tau0=0.9)
+        q = predict_iqn(m, X[:1], xm, xs, ym, ys, taus=self.TAUS).ravel()
+        true = np.array([gev_quantile(t, self.MU, self.SIGMA, self.XI)
+                         for t in self.TAUS])
+        return q, true
 
+    def _assert_body_fits(self, q, true):
+        """Below the splice the fit must be real, or the tail claim is vacuous."""
+        err = float(np.abs(q[:2] - true[:2]).max())
+        assert err < 0.25, (
+            f"body does not fit below the splice: max abs err {err:.3f} at "
+            f"tau=0.5,0.9 (fitted {q[:2].round(3)}, true {true[:2].round(3)}). "
+            f"Anything this test then says about the tail is vacuous.")
+
+    @pytest.mark.slow
     def test_body_only_saturates(self):
-        q, _ = self._fit(tail=False)
-        # the last three levels collapse onto one another
+        q, true = self._fit(tail=False)
+        self._assert_body_fits(q, true)
+        # Having fitted the body, the last levels collapse onto one another.
         assert abs(q[-1] - q[-2]) < 0.05 * max(abs(q[-2]), 1e-6)
 
+    @pytest.mark.slow
     def test_tail_head_keeps_climbing(self):
-        q, _ = self._fit(tail=True)
+        q, true = self._fit(tail=True)
+        self._assert_body_fits(q, true)
         assert q[-1] > q[-2] > q[-3], f"tail did not extrapolate: {q}"
+        # xi < 0 gives a finite endpoint; running past it is not extrapolation,
+        # it is a tail that has stopped meaning anything.
+        assert q[-1] < self.ENDPOINT, (
+            f"tail ran past the finite endpoint {self.ENDPOINT}: {q.round(3)}")
 
     def test_splice_is_continuous_at_tau0(self):
         """Q_GPD(tau0) = u exactly, so the two pieces must agree at the splice."""
