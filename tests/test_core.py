@@ -4,7 +4,12 @@ import numpy as np
 import torch
 import pytest
 
-from gbc.loss import pinball_loss, composite_loss, gaussian_nll
+from gbc.loss import (
+    _sample_quantile_pair,
+    composite_loss,
+    gaussian_nll,
+    pinball_loss,
+)
 from gbc.iqn import cosine_embed, IQN
 from gbc.utils import set_seed, get_device, cosine_schedule
 from gbc.data import load_motorcycle, friedman1, jump_fn, make_bimodal, lhs_1d
@@ -64,14 +69,64 @@ class TestCompositeLoss:
     def test_shape_and_scalar(self):
         y = torch.randn(10)
         f = torch.randn(10, 2)
-        loss = composite_loss(y, f, 0.5)
+        loss = composite_loss(y, f, 0.5, f_other=f, tau_other=0.8)
         assert loss.dim() == 0  # scalar
 
     def test_perfect_prediction(self):
         y = torch.tensor([1.0, 2.0, 3.0])
         f = torch.stack([y, y], dim=1)  # both cols = y
-        loss = composite_loss(y, f, 0.5)
+        loss = composite_loss(y, f, 0.5, f_other=f, tau_other=0.8)
         assert loss.item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_nonzero_crossing_weight_requires_pair(self):
+        y = torch.zeros(3)
+        f = torch.zeros(3, 2)
+        with pytest.raises(ValueError, match="nonzero crossing weight"):
+            composite_loss(y, f, 0.5)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"f_other": torch.zeros(3, 2)},
+            {"tau_other": 0.8},
+        ],
+    )
+    def test_pair_arguments_must_be_supplied_together(self, kwargs):
+        y = torch.zeros(3)
+        f = torch.zeros(3, 2)
+        with pytest.raises(ValueError, match="together"):
+            composite_loss(y, f, 0.5, w=(0.3, 0.0, 0.7), **kwargs)
+
+    def test_zero_crossing_weight_allows_unpaired_loss(self):
+        y = torch.zeros(3)
+        f = torch.zeros(3, 2)
+        loss = composite_loss(y, f, 0.5, w=(0.3, 0.0, 0.7))
+        assert loss.item() == pytest.approx(0.0)
+
+
+class TestQuantilePairSampling:
+    def test_local_pairs_are_distinct_and_nearby(self):
+        torch.manual_seed(17)
+        for _ in range(500):
+            tau, tau_other = _sample_quantile_pair(
+                local_probability=1.0, local_radius=0.05
+            )
+            assert 0.0 < tau < 1.0
+            assert 0.0 < tau_other < 1.0
+            assert 0.0 < abs(tau - tau_other) <= 0.05 + 1e-12
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"local_probability": -0.1},
+            {"local_probability": 1.1},
+            {"local_radius": 0.0},
+            {"local_radius": 1.0},
+        ],
+    )
+    def test_invalid_pair_sampler_arguments(self, kwargs):
+        with pytest.raises(ValueError):
+            _sample_quantile_pair(**kwargs)
 
 
 # ── gaussian_nll ────────────────────────────────────────────────

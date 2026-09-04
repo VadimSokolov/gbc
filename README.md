@@ -37,11 +37,40 @@ X, y = load_motorcycle()           # 133 observations, Ch 5
 # Train IQN (Ch 5 §sec-iqn-training)
 model, xm, xs, ym, ys = train_iqn(X, y, epochs=3000)
 
-# Draw 500 posterior predictive samples
+# Evaluate 500 evenly spaced posterior predictive quantiles
 samples = sample_iqn(model, X, xm, xs, ym, ys, B=500)   # (500, 133)
 
 print(f"CRPS  : {crps_samples(y, samples):.3f}")
 print(f"90% coverage: {coverage(y, samples, alpha=0.90):.3f}")
+```
+
+### Ordered quantiles and CRPS
+
+The training loss compares both nearby and distant quantile levels, which
+discourages crossings but does not mathematically rule them out. Prediction-time
+rearrangement provides ordered values when an application requires them. It is
+opt-in, so existing prediction results remain unchanged.
+
+```python
+from gbc import predict_iqn
+
+ordered_samples = sample_iqn(
+    model, X, xm, xs, ym, ys, B=500, rearrange=True
+)
+ordered_levels = predict_iqn(
+    model, X, xm, xs, ym, ys,
+    taus=[0.05, 0.50, 0.95],
+    rearrange=True,
+)
+```
+
+`crps_samples` is exact and deterministic by default. It uses an
+`O(B log B)` sorted-sample identity rather than allocating the full pairwise
+matrix. For unusually large sample sets, a seeded approximation is available
+explicitly:
+
+```python
+approximate_crps = crps_samples(y, samples, method="mc", seed=42)
 ```
 
 ### Multivariate Posterior (MGBC)
@@ -93,7 +122,8 @@ print(f"Energy Score: {energy_score(Y_test[:, order], Z_samples):.4f}")
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ -v       # 188 tests, ~13 seconds
+python -m pytest -q              # 305 pass, 2 slow tests skipped
+python -m pytest -q --runslow    # all 307 pass
 ```
 
 Test files cover each use case with synthetic data:
@@ -109,6 +139,8 @@ Test files cover each use case with synthetic data:
 | `test_ensemble.py` | HetMLP, conformal calibration |
 | `test_financial.py` | MGBC on multivariate returns, portfolio allocation |
 | `test_core.py` | Losses, cosine embedding, utils, data loaders |
+| `test_metrics.py` | Exact and seeded approximate CRPS |
+| `test_rearrangement.py` | Quantile rearrangement and prediction flags |
 | `test_evt.py`, `test_evt_inference.py` | GEV/GPD, classical baselines, GBC-QNN estimators |
 | `test_survivor.py`, `test_shrinkage.py` | Survivor functionals, horseshoe pooling |
 | `test_diagnostics.py` | Rhat and ESS against AR(1) chains with known autocorrelation |

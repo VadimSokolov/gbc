@@ -47,7 +47,7 @@ Usage::
     from gbc.shrinkage import horseshoe_posterior, horseshoe_batch
 """
 
-from gbc.iqn import IQN, train_iqn, sample_iqn, predict_iqn
+from gbc.iqn import IQN, predict_iqn, rearrange_quantiles, sample_iqn, train_iqn
 from gbc.ensemble import HetMLP
 from gbc.metrics import crps_samples, crps_gaussian, coverage, pi_width, pit_values, energy_score
 from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble
@@ -116,7 +116,7 @@ except ImportError:
 
 __version__ = "0.6.0"
 __all__ = [
-    "IQN", "train_iqn", "sample_iqn", "predict_iqn",
+    "IQN", "train_iqn", "sample_iqn", "predict_iqn", "rearrange_quantiles",
     "HetMLP",
     "CausalIQN", "CausalIQNv2", "CausalEnsemble",
     "crps_samples", "crps_gaussian", "coverage", "pi_width", "pit_values",

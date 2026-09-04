@@ -22,7 +22,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from gbc.loss import composite_loss
+from gbc.loss import _sample_quantile_pair, composite_loss
 
 
 def cosine_embed(
@@ -153,14 +153,13 @@ class IQN(nn.Module):
     ) -> torch.Tensor:
         """Three-term loss at a randomly sampled tau.
 
-        A second, independently drawn level supplies the monotonicity term.  It
-        is drawn separately rather than as the larger of a sorted pair so that
-        the level scoring the pinball term stays Uniform(0,1); taking the
-        smaller of two uniforms would be Beta(1,2) and would systematically
-        under-train the upper tail, which is the part this library is for.
+        A second level supplies the monotonicity term. The sampler mixes local
+        pairs, which expose short oscillations, with independent global pairs.
+        The level scoring the pinball term keeps a Uniform(0,1) marginal;
+        taking the smaller of two uniforms would be Beta(1,2) and would
+        systematically under-train the upper tail.
         """
-        tau = torch.rand(1).item()
-        tau_other = torch.rand(1).item()
+        tau, tau_other = _sample_quantile_pair()
         f = self(x, tau)
         f_other = self(x, tau_other)
         loss = composite_loss(y, f, tau, w, f_other=f_other, tau_other=tau_other)
@@ -282,6 +281,81 @@ def train_iqn(
     return model, xm, xs, ym, ys
 
 
+def rearrange_quantiles(
+    quantiles: np.ndarray,
+    taus: np.ndarray | list[float],
+    target_taus: np.ndarray | list[float] | None = None,
+) -> np.ndarray:
+    """Monotonically rearrange one or more quantile curves.
+
+    Values are sorted along their quantile-grid axis. If ``target_taus`` is
+    supplied, each sorted curve is then linearly interpolated from the source
+    grid to the requested levels. Target order and repetitions are preserved.
+
+    Args:
+        quantiles: Values on the source grid with shape (m,) or (m, n).
+        taus: Finite, strictly increasing source quantile levels with shape
+            (m,).
+        target_taus: Optional target levels inside the source grid.
+
+    Returns:
+        Rearranged values with the same rank as ``quantiles``. The first
+        dimension equals ``len(target_taus)`` when targets are supplied.
+    """
+    values = np.asarray(quantiles, dtype=np.float64)
+    grid = np.asarray(taus, dtype=np.float64)
+    if values.ndim not in (1, 2):
+        raise ValueError(
+            "quantiles must be a one-dimensional or two-dimensional array"
+        )
+    if grid.ndim != 1 or grid.size < 2:
+        raise ValueError(
+            "taus must be a one-dimensional grid with at least two levels"
+        )
+    if values.shape[0] != grid.size:
+        raise ValueError("quantiles and taus must have the same grid length")
+    if not np.all(np.isfinite(values)) or not np.all(np.isfinite(grid)):
+        raise ValueError("quantiles and taus must contain only finite values")
+    if np.any(np.diff(grid) <= 0.0):
+        raise ValueError("taus must be strictly increasing")
+
+    ordered = np.sort(values, axis=0)
+    if target_taus is None:
+        return ordered
+
+    targets = np.asarray(target_taus, dtype=np.float64)
+    if targets.ndim != 1 or not np.all(np.isfinite(targets)):
+        raise ValueError("target_taus must be a finite one-dimensional array")
+    if np.any(targets < grid[0]) or np.any(targets > grid[-1]):
+        raise ValueError("target_taus must lie inside the source grid")
+    if values.ndim == 1:
+        return np.interp(targets, grid, ordered)
+
+    result = np.empty((targets.size, values.shape[1]), dtype=np.float64)
+    for column in range(values.shape[1]):
+        result[:, column] = np.interp(targets, grid, ordered[:, column])
+    return result
+
+
+def _predict_iqn_grid(
+    model: IQN,
+    X_te: np.ndarray,
+    xm: np.ndarray,
+    xs: np.ndarray,
+    ym: float,
+    ys: float,
+    taus: np.ndarray,
+) -> np.ndarray:
+    """Evaluate an IQN on a supplied grid without rearrangement."""
+    Xt = torch.tensor((X_te - xm) / xs, dtype=torch.float32)
+    rows = []
+    with torch.no_grad():
+        for tau in taus:
+            f = model(Xt, float(tau))
+            rows.append(f[:, 1].numpy() * ys + ym)
+    return np.array(rows)
+
+
 def predict_iqn(
     model: IQN,
     X_te: np.ndarray,
@@ -290,6 +364,9 @@ def predict_iqn(
     ym: float,
     ys: float,
     taus: np.ndarray | list[float] = (0.025, 0.25, 0.5, 0.75, 0.975),
+    *,
+    rearrange: bool = False,
+    rearrange_grid_size: int = 1000,
 ) -> np.ndarray:
     """Predict at user-specified quantile levels.
 
@@ -304,19 +381,40 @@ def predict_iqn(
     xm, xs : input normalization (mean, std) from train_iqn.
     ym, ys : output normalization (mean, std) from train_iqn.
     taus : quantile levels to evaluate.
+    rearrange : evaluate on a dense grid, sort each curve, and interpolate back
+        to ``taus``. Off by default to preserve existing prediction behavior.
+    rearrange_grid_size : number of source levels for rearrangement.
 
     Returns
     -------
     (len(taus), n_test) array of predicted values.
     """
-    taus = np.asarray(taus)
-    Xt = torch.tensor((X_te - xm) / xs, dtype=torch.float32)
-    rows = []
-    with torch.no_grad():
-        for tau in taus:
-            f = model(Xt, float(tau))
-            rows.append(f[:, 1].numpy() * ys + ym)
-    return np.array(rows)
+    requested = np.asarray(taus)
+    if not rearrange:
+        return _predict_iqn_grid(model, X_te, xm, xs, ym, ys, requested)
+
+    if requested.ndim != 1 or requested.size == 0:
+        raise ValueError("taus must be a nonempty one-dimensional array")
+    requested_float = requested.astype(np.float64)
+    if not np.all(np.isfinite(requested_float)):
+        raise ValueError("taus must contain only finite values")
+    if np.any(requested_float <= 0.0) or np.any(requested_float >= 1.0):
+        raise ValueError("rearranged predictions require taus strictly inside (0, 1)")
+    if (
+        isinstance(rearrange_grid_size, (bool, np.bool_))
+        or not isinstance(rearrange_grid_size, (int, np.integer))
+        or rearrange_grid_size < 2
+    ):
+        raise ValueError("rearrange_grid_size must be an integer of at least 2")
+
+    edge = min(
+        0.005,
+        0.5 * float(np.min(requested_float)),
+        0.5 * (1.0 - float(np.max(requested_float))),
+    )
+    dense_taus = np.linspace(edge, 1.0 - edge, int(rearrange_grid_size))
+    dense_values = _predict_iqn_grid(model, X_te, xm, xs, ym, ys, dense_taus)
+    return rearrange_quantiles(dense_values, dense_taus, requested_float)
 
 
 def sample_iqn(
@@ -327,6 +425,8 @@ def sample_iqn(
     ym: float,
     ys: float,
     B: int = 500,
+    *,
+    rearrange: bool = False,
 ) -> np.ndarray:
     """Evaluate a trained IQN on a deterministic grid of B quantile levels.
 
@@ -351,6 +451,8 @@ def sample_iqn(
     xm, xs : input normalization (mean, std).
     ym, ys : output normalization (mean, std).
     B : number of quantile levels on the grid.
+    rearrange : sort each prediction column on the evaluation grid. Off by
+        default to preserve existing sampling behavior.
 
     Returns
     -------
@@ -363,4 +465,5 @@ def sample_iqn(
         for tau in taus:
             f = model(Xt, tau.item())
             rows.append(f[:, 1].numpy() * ys + ym)
-    return np.array(rows)
+    result = np.array(rows)
+    return np.sort(result, axis=0) if rearrange else result

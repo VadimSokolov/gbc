@@ -42,9 +42,41 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from gbc.loss import composite_loss
+from gbc.loss import _sample_quantile_pair, composite_loss
 from gbc.iqn import cosine_embed, train_iqn
 from gbc.utils import get_device
+
+
+def _paired_forward(
+    model: nn.Module,
+    x: torch.Tensor,
+    z: torch.Tensor,
+    tau: float,
+    tau_other: float,
+) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
+    """Evaluate two levels with the same stochastic-layer realization.
+
+    The random state after this function matches one forward evaluation. This
+    lets a crossing penalty compare quantile levels without adding differences
+    caused by independent dropout masks.
+    """
+    cpu_before = torch.random.get_rng_state()
+    cuda_before = torch.cuda.get_rng_state(x.device) if x.is_cuda else None
+
+    first = model(x, z, tau)
+    cpu_after = torch.random.get_rng_state()
+    cuda_after = torch.cuda.get_rng_state(x.device) if x.is_cuda else None
+
+    torch.random.set_rng_state(cpu_before)
+    if cuda_before is not None:
+        torch.cuda.set_rng_state(cuda_before, x.device)
+    try:
+        second = model(x, z, tau_other)
+    finally:
+        torch.random.set_rng_state(cpu_after)
+        if cuda_after is not None:
+            torch.cuda.set_rng_state(cuda_after, x.device)
+    return first, second
 
 
 class CausalIQN(nn.Module):
@@ -116,12 +148,16 @@ class CausalIQN(nn.Module):
         w: tuple[float, float, float] = (0.3, 0.1, 0.6),
     ) -> torch.Tensor:
         """Composite loss with propensity BCE."""
-        tau = torch.rand(1).item()
-        f, pi_logit, _, _ = self(x, z, tau)
+        tau, tau_other = _sample_quantile_pair()
+        first, second = _paired_forward(self, x, z, tau, tau_other)
+        f, pi_logit, _, _ = first
+        f_other = second[0]
         pi_loss = nn.functional.binary_cross_entropy_with_logits(
             pi_logit.view(-1), z.float()
         )
-        return composite_loss(y, f, tau, w) + pi_loss
+        return composite_loss(
+            y, f, tau, w, f_other=f_other, tau_other=tau_other
+        ) + pi_loss
 
     def fit(
         self,
@@ -267,12 +303,16 @@ class CausalIQNv2(nn.Module):
         w: tuple[float, float, float] = (0.3, 0.1, 0.6),
     ) -> torch.Tensor:
         """Composite loss with propensity BCE."""
-        tau = torch.rand(1).item()
-        f, pi_logit, _, _ = self(x, z, tau)
+        tau, tau_other = _sample_quantile_pair()
+        first, second = _paired_forward(self, x, z, tau, tau_other)
+        f, pi_logit, _, _ = first
+        f_other = second[0]
         pi_loss = nn.functional.binary_cross_entropy_with_logits(
             pi_logit.view(-1), z.float()
         )
-        return composite_loss(y, f, tau, w) + pi_loss
+        return composite_loss(
+            y, f, tau, w, f_other=f_other, tau_other=tau_other
+        ) + pi_loss
 
 
 class CausalEnsemble:

@@ -15,6 +15,48 @@ import torch
 import torch.nn as nn
 
 
+def _sample_quantile_pair(
+    local_probability: float = 0.5,
+    local_radius: float = 0.05,
+) -> tuple[float, float]:
+    """Sample distinct quantile levels for pinball and crossing losses.
+
+    The first level has a Uniform(0, 1) marginal distribution. Local pairs
+    make the crossing term sensitive to short oscillations, while independent
+    global pairs still compare distant parts of the curve.
+
+    Args:
+        local_probability: Probability of drawing the second level near the
+            first.
+        local_radius: Maximum distance between levels for a local pair. It must
+            be no greater than 0.5 so one direction always remains inside the
+            interval.
+    """
+    if not 0.0 <= local_probability <= 1.0:
+        raise ValueError("local_probability must be between 0 and 1")
+    if not 0.0 < local_radius <= 0.5:
+        raise ValueError("local_radius must be in (0, 0.5]")
+
+    eps = float(torch.finfo(torch.float32).eps)
+
+    def draw_level() -> float:
+        return float(torch.rand(()).clamp(eps, 1.0 - eps).item())
+
+    tau = draw_level()
+    if torch.rand(()).item() < local_probability:
+        distance = local_radius * (0.5 + 0.5 * torch.rand(()).item())
+        direction = -1.0 if torch.rand(()).item() < 0.5 else 1.0
+        tau_other = tau + direction * distance
+        if not eps < tau_other < 1.0 - eps:
+            tau_other = tau - direction * distance
+    else:
+        tau_other = draw_level()
+
+    if tau_other == tau:
+        tau_other = tau + eps if tau <= 0.5 else tau - eps
+    return tau, float(tau_other)
+
+
 def pinball_loss(y: torch.Tensor, y_hat: torch.Tensor, tau: float) -> torch.Tensor:
     r"""Pinball (check) loss for quantile regression.
 
@@ -60,8 +102,9 @@ def composite_loss(
     (with zero subgradient) at every non-crossing configuration, it leaves the
     pinball minimiser, the tau-quantile, exactly where it was.
 
-    Omitting ``(f_other, tau_other)`` drops term 2 rather than substituting
-    anything for it.  In particular it is *not* replaced by a one-sided penalty
+    Both pair arguments are required when the crossing weight is nonzero. This
+    prevents callers from silently requesting a regularizer that is not
+    evaluated. In particular, term 2 is *not* replaced by a one-sided penalty
     on the sign of the residual ``y - Q(tau)``: such a term never compares two
     levels, so it cannot detect a crossing, and it is active at the correct
     quantile, which shifts the minimiser to a different level than tau.
@@ -80,13 +123,20 @@ def composite_loss(
     -------
     Scalar loss.
     """
+    has_other = f_other is not None
+    has_other_tau = tau_other is not None
+    if has_other != has_other_tau:
+        raise ValueError("f_other and tau_other must be supplied together")
+    if w[1] != 0.0 and not has_other:
+        raise ValueError(
+            "f_other and tau_other are required for a nonzero crossing weight"
+        )
+
     e = y.view(-1, 1) - f
     # L1 location anchor; absolute error targets a conditional median.
     loss = w[0] * torch.mean(torch.abs(e[:, 0]))
     # Monotonicity penalty: a genuine crossing between two quantile levels
-    if f_other is not None:
-        if tau_other is None:
-            raise ValueError("tau_other must be given alongside f_other")
+    if f_other is not None and tau_other is not None and w[1] != 0.0:
         q_lo, q_hi = (f[:, 1], f_other[:, 1]) if tau <= tau_other else (
             f_other[:, 1], f[:, 1])
         loss = loss + w[1] * torch.mean(torch.relu(q_lo - q_hi))

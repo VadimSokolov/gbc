@@ -6,11 +6,13 @@ DGP: Y = X + 2·Z + N(0, 0.5)
      True ATE = 2, True CATE = 2 (constant)
 """
 
-import numpy as np
-import torch
-import pytest
+from unittest.mock import patch
 
-from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble
+import numpy as np
+import pytest
+import torch
+
+from gbc.causal import CausalIQN, CausalIQNv2, CausalEnsemble, _paired_forward
 from gbc.welfare import (
     meu, welfare_change, yaari_weighted, individual_welfare,
     distortion_identity, distortion_cvar, distortion_power, distortion_wang,
@@ -93,6 +95,53 @@ class TestCausalIQNv2:
         model = CausalIQNv2(xdim=1, hdim=32, nh=8)
         loss = model.loss_fn(x, y, z)
         assert loss.dim() == 0
+
+    def test_paired_forward_reuses_dropout_masks(self):
+        torch.manual_seed(29)
+        model = CausalIQNv2(xdim=2, hdim=32, nh=8, dropout=0.5)
+        model.train()
+        x = torch.randn(20, 2)
+        z = torch.ones(20)
+
+        torch.manual_seed(31)
+        first, second = _paired_forward(model, x, z, 0.4, 0.4)
+        state_after_pair = torch.random.get_rng_state()
+
+        torch.manual_seed(31)
+        model(x, z, 0.4)
+        state_after_one = torch.random.get_rng_state()
+
+        for first_tensor, second_tensor in zip(first, second):
+            assert torch.equal(first_tensor, second_tensor)
+        assert torch.equal(state_after_pair, state_after_one)
+
+
+@pytest.mark.parametrize(
+    "model_cls,model_kwargs",
+    [
+        (CausalIQN, {"xdim": 1}),
+        (CausalIQNv2, {"xdim": 1, "hdim": 16, "nh": 8}),
+    ],
+)
+def test_crossing_weight_is_active_in_causal_losses(model_cls, model_kwargs):
+    model = model_cls(**model_kwargs)
+    n = 4
+    x = torch.zeros(n, 1)
+    y = torch.zeros(n)
+    z = torch.ones(n)
+    pi = torch.zeros(n, 1)
+    first_f = torch.tensor([[0.0, 1.0]]).repeat(n, 1)
+    second_f = torch.tensor([[0.0, 0.0]]).repeat(n, 1)
+    dummy = torch.zeros(n, 2)
+    mu = torch.zeros(n, 1)
+    paired = ((first_f, pi, dummy, mu), (second_f, pi, dummy, mu))
+
+    with patch("gbc.causal._sample_quantile_pair", return_value=(0.2, 0.8)):
+        with patch("gbc.causal._paired_forward", return_value=paired):
+            without = model.loss_fn(x, y, z, w=(0.0, 0.0, 1.0))
+            with_crossing = model.loss_fn(x, y, z, w=(0.0, 2.0, 1.0))
+
+    assert with_crossing.item() - without.item() == pytest.approx(2.0)
 
 
 # ── CausalEnsemble ──────────────────────────────────────────────
