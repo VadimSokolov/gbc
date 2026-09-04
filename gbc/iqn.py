@@ -22,7 +22,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from gbc.loss import _sample_quantile_pair, composite_loss
+from gbc.loss import composite_loss
 
 
 def cosine_embed(
@@ -153,13 +153,12 @@ class IQN(nn.Module):
     ) -> torch.Tensor:
         """Three-term loss at a randomly sampled tau.
 
-        A second level supplies the monotonicity term. The sampler mixes local
-        pairs, which expose short oscillations, with independent global pairs.
-        The level scoring the pinball term keeps a Uniform(0,1) marginal;
-        taking the smaller of two uniforms would be Beta(1,2) and would
-        systematically under-train the upper tail.
+        A second independently sampled level supplies the monotonicity term.
+        The two direct Uniform(0,1) draws preserve the established plain-IQN
+        training stream and give both levels the same marginal distribution.
         """
-        tau, tau_other = _sample_quantile_pair()
+        tau = torch.rand(1).item()
+        tau_other = torch.rand(1).item()
         f = self(x, tau)
         f_other = self(x, tau_other)
         loss = composite_loss(y, f, tau, w, f_other=f_other, tau_other=tau_other)

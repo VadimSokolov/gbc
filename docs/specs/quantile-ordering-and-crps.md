@@ -1,5 +1,10 @@
 # Quantile Ordering and Deterministic CRPS
 
+> Version note: This specification records the 0.7.0 implementation. Version
+> 0.7.1 supersedes the local-pair requirement for plain `IQN` and restores its
+> two independent uniform draws. The causal models continue to use the shared
+> local plus global pair sampler. See `restore-iqn-independent-pairs.md`.
+
 ## Goal
 
 Make the existing soft quantile-crossing penalty effective in every IQN training path, add a deterministic exact empirical CRPS calculation with an explicitly seeded approximation for large sample sets, and provide monotone rearrangement as an opt-in prediction operation without changing default IQN predictions or samples.
@@ -9,7 +14,7 @@ The crossing penalty remains a training regularizer, not a monotonicity guarante
 ## Affected files
 
 - `/Users/vsokolov/Dropbox/papers/gbc/gbc/loss.py`: validate paired crossing-loss inputs and provide local plus global quantile-pair sampling.
-- `/Users/vsokolov/Dropbox/papers/gbc/gbc/iqn.py`: use the shared pair sampler and add rearrangement to prediction and sampling APIs.
+- `/Users/vsokolov/Dropbox/papers/gbc/gbc/iqn.py`: add rearrangement to prediction and sampling APIs. Version 0.7.0 also used the shared pair sampler, but 0.7.1 restores two independent draws for plain IQN training.
 - `/Users/vsokolov/Dropbox/papers/gbc/gbc/causal.py`: activate the paired crossing penalty in both causal IQNs and compare outputs under matched dropout masks.
 - `/Users/vsokolov/Dropbox/papers/gbc/gbc/metrics.py`: replace the randomized default CRPS estimator with the exact empirical score and expose seeded Monte Carlo as an opt-in method.
 - `/Users/vsokolov/Dropbox/papers/gbc/gbc/__init__.py`: export the public rearrangement helper.
@@ -28,7 +33,7 @@ The crossing penalty remains a training regularizer, not a monotonicity guarante
 
 The internal quantile-pair sampler returns two distinct levels in the unit interval. Half of its pairs are local by default, within a configurable radius, and the rest span the interval independently. The first level retains the uniform marginal distribution used by the pinball loss.
 
-`IQN`, `CausalIQN`, and `CausalIQNv2` all use this sampler. The causal models pass the second prediction into `composite_loss`. For `CausalIQNv2`, paired predictions use the same dropout realization so the penalty compares quantile levels rather than dropout noise. Random-number state advances as one stochastic forward pass.
+In 0.7.0, `IQN`, `CausalIQN`, and `CausalIQNv2` all used this sampler. In 0.7.1, plain `IQN` again uses two independent direct draws, while `CausalIQN` and `CausalIQNv2` retain the sampler. The causal models pass the second prediction into `composite_loss`. For `CausalIQNv2`, paired predictions use the same dropout realization so the penalty compares quantile levels rather than dropout noise. Random-number state advances as one stochastic forward pass.
 
 ### CRPS
 
@@ -61,7 +66,7 @@ The internal quantile-pair sampler returns two distinct levels in the unit inter
 - Tests fail before implementation for each newly specified behavior.
 - Both causal loss functions respond to a nonzero crossing weight.
 - The loss API can no longer silently discard a requested crossing penalty.
-- Local pair tests exercise nearby levels, and dense-grid tests demonstrate monotone rearranged output.
+- Local pair tests exercise nearby levels for the causal sampler, the plain-IQN regression locks its two independent draws, and dense-grid tests demonstrate monotone rearranged output.
 - Exact CRPS matches a brute-force all-pairs calculation to numerical precision and is deterministic across repeated calls.
 - Seeded Monte Carlo CRPS repeats for the same seed and rejects a missing seed.
 - Rearranged samples contain exactly the same per-observation values as raw samples and have identical exact CRPS.

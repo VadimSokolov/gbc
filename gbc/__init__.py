@@ -114,7 +114,7 @@ try:
 except ImportError:
     pass  # matplotlib not installed (e.g. headless HPC compute node); core IQN still usable
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 __all__ = [
     "IQN", "train_iqn", "sample_iqn", "predict_iqn", "rearrange_quantiles",
     "HetMLP",

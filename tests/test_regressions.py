@@ -5,6 +5,7 @@ computes rather than what it is named.  The tests assert the *property*, not the
 presence of a token, which is exactly what the earlier checks failed to do.
 """
 import math
+from unittest.mock import call, patch
 
 import numpy as np
 import pytest
@@ -45,6 +46,30 @@ class TestMonotonicityPenalty:
         b = composite_loss(y, self._f(-1.0), 0.2, w,
                            f_other=self._f(1.0), tau_other=0.8)
         assert float(a) == pytest.approx(float(b), abs=1e-12)
+
+    def test_iqn_uses_two_direct_uniform_draws_before_optional_tail_draw(self):
+        """The seeded plain-IQN path must match the 0.6.0 draw order."""
+        from gbc.iqn import IQN
+
+        x = torch.zeros(4, 1)
+        y = torch.zeros(4)
+        prediction = torch.zeros(4, 2)
+
+        for tail in (False, True):
+            model = IQN(1, hdim=8, nh=4, tail=tail, tau0=0.9)
+            draw_values = [0.2, 0.8] + ([0.5] if tail else [])
+            draws = [torch.tensor([value]) for value in draw_values]
+            outputs = [prediction.clone() for _ in draw_values]
+
+            with patch("gbc.iqn.torch.rand", side_effect=draws) as mock_rand:
+                with patch.object(model, "forward", side_effect=outputs) as forward:
+                    loss = model.loss_fn(x, y)
+
+            assert torch.isfinite(loss)
+            assert mock_rand.call_args_list == [call(1)] * len(draw_values)
+            observed = [item.args[1] for item in forward.call_args_list]
+            expected = [0.2, 0.8] + ([0.95] if tail else [])
+            assert observed == pytest.approx(expected)
 
     @pytest.mark.parametrize("tau", [0.05, 0.25, 0.75, 0.95])
     def test_minimiser_is_the_tau_quantile(self, tau):

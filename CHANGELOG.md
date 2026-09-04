@@ -4,13 +4,43 @@ Numbers produced by `train_iqn` are only comparable within a version whose
 training path is unchanged. Each entry says whether fresh training reproduces
 the previous version.
 
+## 0.7.1 (2026-09-04)
+
+Plain `train_iqn` output **does not** reproduce 0.7.0. This patch restores the
+two independent Uniform(0,1) quantile draws used by the 0.6.0 plain-IQN
+training path. In the same numerical environment, a seed-0, 3000-epoch
+motorcycle fit produced a sample matrix exactly equal to the saved 0.6.0-path
+baseline, with maximum absolute difference 0.0. Causal training does reproduce
+the corrected 0.7.0 path and does not reproduce versions before that fix.
+
+### Training
+
+- `IQN.loss_fn` once again draws `tau` and `tau_other` with two direct,
+  independent calls to `torch.rand(1).item()`. Tail-enabled training consumes
+  its dedicated tail level as the next draw, preserving the established random
+  stream.
+- The local plus global pair sampler is no longer used by plain IQN. On the
+  measured motorcycle fit, its 0.7.0 introduction changed predictions by up to
+  15.2 on a response standard deviation of 48.1, barely changed crossing pairs
+  from 34.2% to 33.5%, and worsened exact CRPS from 10.433 to 10.530.
+- The strict `composite_loss` validation and the activated causal crossing
+  penalty from 0.7.0 remain in place. `CausalIQN` and `CausalIQNv2` retain the
+  local plus global pair sampler and matched-dropout comparison.
+- Exact CRPS and opt-in rearrangement are unchanged from 0.7.0.
+
+### Tests
+
+- A regression test locks the direct IQN draw order for body-only and
+  tail-enabled losses.
+- 308 tests, 306 in a default run.
+
 ## 0.7.0 (2026-09-04)
 
 Training output **does not** reproduce 0.6.0. The monotonicity penalty is
 sampled differently and is now evaluated in the causal models, so a fresh fit
 under the same seed gives a different network. Results in
-`paper-wsc2026/results/` and `tab/` were produced under the 0.6.0 training
-path and have not been regenerated.
+`paper-wsc2026/results/` and `paper-wsc2026/tab/` were produced under the 0.6.0
+training path and have not been regenerated.
 
 ### Metrics
 
@@ -60,10 +90,6 @@ path and have not been regenerated.
 
 ### Tests
 
-- `conftest.py` defines a `slow` marker and `--runslow`. The two
-  `TestGPDTailHead` fits are marked slow; they are mini-batched and now assert
-  that the body fits below the splice before making any claim about the tail,
-  so an underpowered network cannot pass them vacuously.
 - 307 tests, 305 in a default run.
 
 ## 0.6.0
@@ -74,6 +100,13 @@ merged: the EVT line (`evt`, `evt_inference`, `survivor`, `shrinkage`,
 WSC 2026 reproduction bundle) and the book line (`ssm`, `spatial_gnn`,
 `portfolio`, `abc`, `testing`, mini-batch and device support in `train_iqn`).
 `train_iqn` carries the keyword arguments of both. 25 modules.
+
+### Tests
+
+- `conftest.py` defines a `slow` marker and `--runslow`. The two
+  `TestGPDTailHead` fits are marked slow; they are mini-batched and assert that
+  the body fits below the splice before making any claim about the tail, so an
+  underpowered network cannot pass them vacuously.
 
 ## 0.5.1 and earlier
 

@@ -46,7 +46,7 @@ print(f"90% coverage: {coverage(y, samples, alpha=0.90):.3f}")
 
 ### Ordered quantiles and CRPS
 
-The training loss compares both nearby and distant quantile levels, which
+The training loss compares independently sampled quantile levels, which
 discourages crossings but does not mathematically rule them out. Prediction-time
 rearrangement provides ordered values when an application requires them. It is
 opt-in, so existing prediction results remain unchanged.
@@ -122,8 +122,8 @@ print(f"Energy Score: {energy_score(Y_test[:, order], Z_samples):.4f}")
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q              # 305 pass, 2 slow tests skipped
-python -m pytest -q --runslow    # all 307 pass
+python -m pytest -q              # 306 pass, 2 slow tests skipped
+python -m pytest -q --runslow    # all 308 pass
 ```
 
 Test files cover each use case with synthetic data:
